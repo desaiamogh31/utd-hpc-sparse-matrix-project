@@ -1,14 +1,112 @@
+# =============================================================================
+# C / C++ / Fortran — compiled objects and binaries
+# =============================================================================
+*.o
+*.obj
+*.a
+*.lib
+*.out
+*.exe
+*.elf
+
+# Shared libraries
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Debug symbol files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Preprocessed / generated C sources
+*.i
+*.ii
+
+# Assembly listings
+*.s
+*.asm
+
+# =============================================================================
+# CUDA
+# =============================================================================
+*.ptx
+*.cubin
+*.fatbin
+*.compute_*
+*.sm_*
+
+# =============================================================================
+# Build directories and generated artifacts
+# =============================================================================
+build/
+bin/
+obj/
+out/
+results/
+*.d
+
+# Autotools / CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile.in
+configure
+autom4te.cache/
+*.m4
+compile_commands.json
+
+# =============================================================================
+# MPI / OpenMP / HPC profiling output
+# =============================================================================
+core
+core.*
+vgcore.*
+gmon.out
+perf.data
+perf.data.old
+*.hpctoolkit/
+*.cubex
+*.cube
+*.scorep/
+*.vampir
+*.vtf
+*.otf
+*.otf2
+*.stat
+*.map
+*.allinea
+
+# =============================================================================
+# Matrix Market / data files generated at runtime
+# =============================================================================
+*.mtx.out
+*.bin
+
+# =============================================================================
+# Editor / IDE files
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+\#*\#
+.DS_Store
+
+# =============================================================================
+# Python (kept from original template)
+# =============================================================================
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
 
-# C extensions
-*.so
-
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
 dist/
 downloads/
