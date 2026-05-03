@@ -3,7 +3,8 @@ import argparse
 import os
 import time
 import warnings
-from typing import Callable, Dict, Tuple
+import tracemalloc
+from typing import Callable, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
@@ -14,7 +15,8 @@ The 2D Laplacian on an n×n grid is represented as an (n²)×(n²) matrix with
 the 5-point stencil pattern (center and 4 neighbors).
 
 Usage:
-    python laplacian_matrix.py --n 100 --repeats 3
+    python laplacian_matrix.py --mode single --n 100 --repeats 3 --outdir results
+    python laplacian_matrix.py --mode scaling --matrix-sizes 10 20 50 100 --repeats 3 --outdir results
 """
 
 from scipy.sparse import (
@@ -25,6 +27,7 @@ from scipy.sparse import (
     lil_matrix,
     spmatrix,
 )
+import matplotlib.pyplot as plt
 
 
 def generate_laplacian_entries(n: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -162,11 +165,17 @@ def benchmark(
     - repeats: Number of benchmark repetitions.
     """
     times = []
+    peak_memory = 0
     last_mat = None
+    
     for _ in range(repeats):
+        tracemalloc.start()
         t0 = time.perf_counter()
         last_mat = fn(n, rows, cols, vals)
         times.append(time.perf_counter() - t0)
+        _, peak = tracemalloc.get_traced_memory()
+        peak_memory = max(peak_memory, peak)
+        tracemalloc.stop()
 
     assert last_mat is not None
     return {
@@ -174,6 +183,7 @@ def benchmark(
         "min_s": float(np.min(times)),
         "max_s": float(np.max(times)),
         "nnz": int(last_mat.nnz),
+        "peak_memory_mb": float(peak_memory / (1024 * 1024)),
         "matrix": last_mat,
     }
 
@@ -190,7 +200,7 @@ def benchmark_conversions(
     source_matrices: Dict[str, spmatrix], repeats: int
 ) -> Dict[str, Dict[str, float]]:
     """
-    Benchmark conversions from COO/LIL to CSR/CSC formats.
+    Benchmark conversions from COO/LIL to CSR/CSC formats with memory tracking.
     
     Parameters:
     - source_matrices: Dict mapping format name (COO/LIL) to the assembled matrix
@@ -214,136 +224,264 @@ def benchmark_conversions(
             
         src_mat = source_matrices[src_format]
         times = []
+        peak_memory = 0
         
         for _ in range(repeats):
+            tracemalloc.start()
             t0 = time.perf_counter()
             if tgt_format == "CSR":
                 _ = src_mat.tocsr()
             elif tgt_format == "CSC":
                 _ = src_mat.tocsc()
             times.append(time.perf_counter() - t0)
+            _, peak = tracemalloc.get_traced_memory()
+            peak_memory = max(peak_memory, peak)
+            tracemalloc.stop()
         
         conversion_key = f"{src_format}->{tgt_format}"
         results[conversion_key] = {
             "avg_s": float(np.mean(times)),
             "min_s": float(np.min(times)),
             "max_s": float(np.max(times)),
+            "peak_memory_mb": float(peak_memory / (1024 * 1024)),
         }
     
     return results
+
+
+def benchmark_scaling(
+    matrix_sizes: List[int], repeats: int, seed: int, outdir: str = "."
+) -> None:
+    """
+    Benchmark assembly runtimes and memory for Laplacian across different sizes.
+    Generates plots of runtime and memory vs matrix dimension.
+    
+    Parameters:
+    - matrix_sizes: List of grid dimensions to benchmark.
+    - repeats: Number of benchmark repetitions per matrix size.
+    - seed: Random seed (unused for laplacian but kept for consistency).
+    - outdir: Output directory for results.
+    """
+    sizes = matrix_sizes
+    coo_times = []
+    lil_times = []
+    coo_memory = []
+    lil_memory = []
+    mat_sizes = []
+    
+    print(f"\nScaling benchmark: COO vs LIL for Laplacian")
+    print(f"Grid sizes: {sizes}")
+    print(f"Repeats per size: {repeats}")
+    print("-" * 85)
+    print(f"{'N':<8}{'Matrix Size':<15}{'COO Avg(s)':>15}{'LIL Avg(s)':>15}{'COO Mem(MB)':>12}{'LIL Mem(MB)':>12}")
+    print("-" * 85)
+    
+    for n in sizes:
+        mat_size = n * n
+        mat_sizes.append(mat_size)
+        
+        start_time = time.perf_counter()
+        rows, cols, vals = generate_laplacian_entries(n)
+        end_time = time.perf_counter()
+        time_taken_for_generation = end_time - start_time
+        print(f"Generated Laplacian entries for n={n} (matrix size {mat_size}×{mat_size}) in {time_taken_for_generation:.6f} seconds.")
+        # Benchmark COO
+        coo_result = benchmark(assemble_coo, n, rows, cols, vals, repeats)
+        coo_times.append(coo_result["avg_s"])
+        coo_memory.append(coo_result["peak_memory_mb"])
+        
+        # Benchmark LIL
+        lil_result = benchmark(assemble_lil, n, rows, cols, vals, repeats)
+        lil_times.append(lil_result["avg_s"])
+        lil_memory.append(lil_result["peak_memory_mb"])
+        
+        print(f"{n:<8}{mat_size:<15}{coo_result['avg_s']:>15.6f}{lil_result['avg_s']:>15.6f}"
+              f"{coo_result['peak_memory_mb']:>12.2f}{lil_result['peak_memory_mb']:>12.2f}")
+    
+    # Create plots
+    os.makedirs(outdir, exist_ok=True)
+    
+    # Time plot
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    ax1.plot(sizes, coo_times, marker='o', label='COO', linewidth=2, markersize=8)
+    ax1.plot(sizes, lil_times, marker='s', label='LIL', linewidth=2, markersize=8)
+    ax1.set_xlabel('Grid Dimension (n)', fontsize=12)
+    ax1.set_ylabel('Assembly Time (seconds)', fontsize=12)
+    ax1.set_xscale('log')
+    ax1.set_yscale('log')
+    ax1.set_title('Laplacian Assembly Time vs Size', fontsize=13)
+    ax1.legend(fontsize=11)
+    ax1.grid(True, alpha=0.3)
+    
+    # Memory plot
+    ax2.plot(sizes, coo_memory, marker='o', label='COO', linewidth=2, markersize=8)
+    ax2.plot(sizes, lil_memory, marker='s', label='LIL', linewidth=2, markersize=8)
+    ax2.set_xlabel('Grid Dimension (n)', fontsize=12)
+    ax2.set_ylabel('Peak Memory (MB)', fontsize=12)
+    ax2.set_xscale('log')
+    ax2.set_yscale('log')
+    ax2.set_title('Laplacian Assembly Memory vs Size', fontsize=13)
+    ax2.legend(fontsize=11)
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plot_path = f"{outdir}/laplacian_scaling.png"
+    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+    print(f"\nSaved scaling plots to {plot_path}")
+    
+    # Save timing data to CSV
+    scaling_table = pd.DataFrame({
+        "N": sizes,
+        "Matrix_Size": mat_sizes,
+        "COO_Avg_s": coo_times,
+        "LIL_Avg_s": lil_times,
+        "COO_Peak_Memory_MB": coo_memory,
+        "LIL_Peak_Memory_MB": lil_memory,
+    })
+    
+    csv_path = f"{outdir}/laplacian_scaling.csv"
+    scaling_table.to_csv(csv_path, index=False)
+    print(f"Saved timing data to {csv_path}")
+    print(scaling_table.to_string(index=False))
+    print("-" * 85)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Benchmark 2D Laplacian sparse matrix assembly for COO/CSR/LIL/CSC."
     )
+    
+    # Mode selection
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="single",
+        choices=["single", "scaling"],
+        help="Benchmark mode: 'single' for a single matrix size, 'scaling' for multiple sizes.",
+    )
+    
     parser.add_argument(
         "--n",
         type=int,
         default=100,
-        help="Grid dimension (n×n grid yields n²×n² matrix).",
+        help="Grid dimension for single mode (n×n grid yields n²×n² matrix).",
     )
     parser.add_argument("--repeats", type=int, default=3, help="Benchmark repetitions.")
+    parser.add_argument(
+        "--matrix-sizes",
+        type=int,
+        nargs='+',
+        default=[10, 20, 50, 100],
+        help="List of grid dimensions to benchmark (used in 'scaling' mode).",
+    )
     parser.add_argument("--outdir", type=str, default=".", help="Output directory for results.")
     args = parser.parse_args()
 
-    n = args.n
-    rows, cols, vals = generate_laplacian_entries(n)
-    mat_size = n * n
-    
-    # Ensure output directory exists
-    os.makedirs(args.outdir, exist_ok=True)
+    if args.mode == "single":
+        n = args.n
+        start_time = time.perf_counter()
+        rows, cols, vals = generate_laplacian_entries(n)
+        end_time = time.perf_counter()
+        time_taken_for_generation = end_time - start_time
+        print(f"Generated Laplacian entries for n={n} (matrix size {n * n}×{n * n}) in {time_taken_for_generation:.6f} seconds.")
+        mat_size = n * n
+        
+        # Ensure output directory exists
+        os.makedirs(args.outdir, exist_ok=True)
 
-    builders = {
-        "COO": assemble_coo,
-        "LIL": assemble_lil,
-        "CSR": assemble_csr,
-        "CSC": assemble_csc,
-    }
+        builders = {
+            "COO": assemble_coo,
+            "LIL": assemble_lil,
+            "CSR": assemble_csr,
+            "CSC": assemble_csc,
+        }
 
-    results = {}
-    for name, fn in builders.items():
-        results[name] = benchmark(fn, n, rows, cols, vals, args.repeats)
+        results = {}
+        for name, fn in builders.items():
+            results[name] = benchmark(fn, n, rows, cols, vals, args.repeats)
 
-    # Correctness: compare all against COO result.
-    ref = results["COO"]["matrix"]
-    print(f"\n2D Laplacian assembly benchmark (grid n={n}, matrix size {mat_size}×{mat_size})")
-    print("-" * 74)
-    print(
-        f"{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'EqualToCOO':>18}"
-    )
-    print("-" * 74)
-    for name in ["COO", "LIL", "CSR", "CSC"]:
-        r = results[name]
-        ok = matrices_equal(r["matrix"], ref)
+        # Correctness: compare all against COO result.
+        ref = results["COO"]["matrix"]
+        print(f"\n2D Laplacian assembly benchmark (grid n={n}, matrix size {mat_size}×{mat_size})")
+        print("-" * 90)
         print(
-            f"{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
-            f"{r['nnz']:>12d}{str(ok):>18}"
+            f"{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}"
         )
-    
-    table = pd.DataFrame(
-        [
-            {
-                "Format": name,
-                "N" : mat_size,
-                "Avg(s)": results[name]["avg_s"],
-                "Min(s)": results[name]["min_s"],
-                "Max(s)": results[name]["max_s"],
-                "NNZ": results[name]["nnz"],
-                "EqualToCOO": matrices_equal(results[name]["matrix"], ref),
-            }
-            for name in ["COO", "LIL", "CSR", "CSC"]
-        ]
-    )
+        print("-" * 90)
+        for name in ["COO", "LIL", "CSR", "CSC"]:
+            r = results[name]
+            ok = matrices_equal(r["matrix"], ref)
+            print(
+                f"{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
+                f"{r['nnz']:>12d}{r['peak_memory_mb']:>12.2f}{str(ok):>18}"
+            )
+        
+        table = pd.DataFrame(
+            [
+                {
+                    "Format": name,
+                    "N" : mat_size,
+                    "Avg Time(s)": results[name]["avg_s"],
+                    "Min(s)": results[name]["min_s"],
+                    "Max(s)": results[name]["max_s"],
+                    "NNZ": results[name]["nnz"],
+                    "Peak_Memory_MB": results[name]["peak_memory_mb"],
+                    "EqualToCOO": matrices_equal(results[name]["matrix"], ref),
+                }
+                for name in ["COO", "LIL", "CSR", "CSC"]
+            ]
+        )
 
-    # Ensure output directory exists
-    os.makedirs(args.outdir, exist_ok=True)
-    
-    output_path = f"{args.outdir}/laplacian_matrix_benchmark.csv"
-    table.to_csv(output_path, index=False)
-    print(f"\nSaved table to {output_path}")
-    print(table.to_string(index=False))
-    print("-" * 74)
-    print("Note: Direct incremental assembly is usually fastest in LIL/COO,")
-    print("while direct CSR/CSC insertion is typically much slower.")
-    
-    # Benchmark conversions from COO/LIL to CSR/CSC
-    print("\n" + "=" * 74)
-    print("Format Conversion Benchmarks")
-    print("=" * 74)
-    
-    source_matrices = {
-        "COO": results["COO"]["matrix"],
-        "LIL": results["LIL"]["matrix"],
-    }
-    
-    conversion_results = benchmark_conversions(source_matrices, args.repeats)
-    
-    print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}")
-    print("-" * 51)
-    for name in sorted(conversion_results.keys()):
-        r = conversion_results[name]
-        print(
-            f"{name:<15}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
+        output_path = f"{args.outdir}/laplacian_matrix_benchmark.csv"
+        table.to_csv(output_path, index=False)
+        print(f"\nSaved table to {output_path}")
+        print(table.to_string(index=False))
+        print("-" * 90)
+        print("Note: Direct incremental assembly is usually fastest in LIL/COO,")
+        print("while direct CSR/CSC insertion is typically much slower.")
+        
+        # Benchmark conversions from COO/LIL to CSR/CSC
+        print("\n" + "=" * 90)
+        print("Format Conversion Benchmarks")
+        print("=" * 90)
+        
+        source_matrices = {
+            "COO": results["COO"]["matrix"],
+            "LIL": results["LIL"]["matrix"],
+        }
+        
+        conversion_results = benchmark_conversions(source_matrices, args.repeats)
+        
+        print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}")
+        print("-" * 63)
+        for name in sorted(conversion_results.keys()):
+            r = conversion_results[name]
+            print(
+                f"{name:<15}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}{r['peak_memory_mb']:>12.2f}"
+            )
+        
+        conversion_table = pd.DataFrame(
+            [
+                {
+                    "Conversion": name,
+                    "Avg(s)": conversion_results[name]["avg_s"],
+                    "Min(s)": conversion_results[name]["min_s"],
+                    "Max(s)": conversion_results[name]["max_s"],
+                    "Peak_Memory_MB": conversion_results[name]["peak_memory_mb"],
+                }
+                for name in sorted(conversion_results.keys())
+            ]
         )
-    
-    conversion_table = pd.DataFrame(
-        [
-            {
-                "Conversion": name,
-                "Avg(s)": conversion_results[name]["avg_s"],
-                "Min(s)": conversion_results[name]["min_s"],
-                "Max(s)": conversion_results[name]["max_s"],
-            }
-            for name in sorted(conversion_results.keys())
-        ]
-    )
-    
-    conversion_output_path = f"{args.outdir}/laplacian_conversion_benchmark.csv"
-    conversion_table.to_csv(conversion_output_path, index=False)
-    print(f"\nSaved conversion table to {conversion_output_path}")
-    print(conversion_table.to_string(index=False))
-    print("-" * 74)
+        
+        conversion_output_path = f"{args.outdir}/laplacian_conversion_benchmark.csv"
+        conversion_table.to_csv(conversion_output_path, index=False)
+        print(f"\nSaved conversion table to {conversion_output_path}")
+        print(conversion_table.to_string(index=False))
+        print("-" * 90)
+        
+    elif args.mode == "scaling":
+        benchmark_scaling(args.matrix_sizes, args.repeats, seed=0, outdir=args.outdir)
 
 
 if __name__ == "__main__":

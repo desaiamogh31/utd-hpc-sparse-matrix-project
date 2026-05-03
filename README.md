@@ -41,16 +41,14 @@ This project:
 | **COO** | Coordinate (triplet) | Assembly, incremental construction |
 | **CSR** | Compressed Sparse Row | Row-wise access, SpMV |
 | **CSC** | Compressed Sparse Column | Column-wise access, sparse direct solvers |
-| **ELL** | ELLPACK / ITPACK | Regular sparsity patterns, GPU kernels |
-| **DIA** | Diagonal | Banded / diagonal-dominant matrices |
-| **BSR** | Block Sparse Row | Block-structured matrices (FEM with DOFs per node) |
+| **LIL** | List of Lists
 
 ---
 
 ## Features
 
 - **Sparse matrix assembly** — constructs global sparse matrices by accumulating local element contributions.
-- **Format conversion** — routines to convert between COO, CSR, CSC, ELL, DIA, and BSR.
+- **Format conversion** — routines to convert between COO, CSR, CSC, LIL.
 - **SpMV** — `y = A * x` benchmarked for all formats.
 - **SpMM** — `C = A * B` for pairs of sparse matrices.
 - **Correctness validation** — results are cross-checked against a dense reference implementation.
@@ -67,12 +65,7 @@ utd-hpc-sparse-matrix-project/
 │   ├── assembly/         # Finite-element assembly routines
 │   ├── kernels/          # SpMV and SpMM kernels
 │   └── utils/            # I/O, timing, validation helpers
-├── include/              # Header files
 ├── tests/                # Unit and integration tests
-├── benchmarks/           # Benchmark drivers and scripts
-├── data/                 # Sample matrices (Matrix Market .mtx files)
-├── results/              # Benchmark output (ignored by git)
-├── Makefile              # Top-level build file
 └── README.md
 ```
 

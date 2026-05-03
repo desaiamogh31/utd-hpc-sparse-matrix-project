@@ -9,16 +9,16 @@ import numpy as np
 import pandas as pd
 
 """
-Benchmark symmetric sparse matrix assembly across COO, CSR, LIL, and CSC.
+Benchmark asymmetric sparse matrix assembly across COO, CSR, LIL, and CSC.
 
 This script provides two modes:
 """
 ''' SAMPLE USAGE:
 # Single matrix benchmark
-python symmetric_matrix.py --mode single --n 2000 --upper-nnz 10000 --repeats 3 --outdir results
+python asymmetric_matrix.py --mode single --n 2000 --nnz 10000 --repeats 3 --outdir results
 
 # Scaling with custom sizes and ratio
-python symmetric_matrix.py --mode scaling --matrix-sizes 1000 10000 100000 1000000 --nnz-ratio 4.0 8.0 16.0 --repeats 2 --outdir results
+python asymmetric_matrix.py --mode scaling --matrix-sizes 1000 10000 100000 1000000 --nnz-ratio 8.0 --repeats 2 --outdir results
 '''
 
 from scipy.sparse import (
@@ -31,64 +31,53 @@ from scipy.sparse import (
 )
 import matplotlib.pyplot as plt
 
-#Helper functions for symmetric matrix assembly and benchmarking
-def generate_upper_tri_entries(
-    n: int, upper_nnz: int, seed: int = 0
+
+def generate_random_entries(
+    n: int, nnz: int, seed: int = 0
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Generate random entries for the upper triangle (including diagonal).
+    Generate random entries for an asymmetric matrix (entire matrix, not constrained).
     Duplicates are allowed and intentionally kept to model realistic assembly.
 
     Parameters:
     - n: Matrix dimension.
-    - upper_nnz: Number of upper-triangle entries to generate (with duplicates).
+    - nnz: Number of entries to generate.
     - seed: Random seed for reproducibility.
 
     Returns:
-    - i: Row indices of upper-triangle entries.
-    - j: Column indices of upper-triangle entries.
-    - v: Values of upper-triangle entries.
+    - i: Row indices of entries.
+    - j: Column indices of entries.
+    - v: Values of entries.
     """
     rng = np.random.default_rng(seed)
-    i = rng.integers(0, n, size=upper_nnz, endpoint=False)
-    j = rng.integers(0, n, size=upper_nnz, endpoint=False)
+    i = rng.integers(0, n, size=nnz, endpoint=False)
+    j = rng.integers(0, n, size=nnz, endpoint=False)
+    vals = rng.standard_normal(nnz)
 
-    # Force (i, j) into upper triangle so i <= j.
-    lo = np.minimum(i, j)
-    hi = np.maximum(i, j)
-    vals = rng.standard_normal(upper_nnz)
-
-    return lo, hi, vals
+    return i, j, vals
 
 def assemble_coo(n: int, i: np.ndarray, j: np.ndarray, v: np.ndarray) -> spmatrix:
     """
-    Assemble symmetric matrix directly in COO.
+    Assemble asymmetric matrix directly in COO.
     """
-    off_diag = i != j
-    rows = np.concatenate([i, j[off_diag]])
-    cols = np.concatenate([j, i[off_diag]])
-    data = np.concatenate([v, v[off_diag]])
-
-    a = coo_matrix((data, (rows, cols)), shape=(n, n))
+    a = coo_matrix((v, (i, j)), shape=(n, n))
     a.sum_duplicates()
     return a
 
 
 def assemble_lil(n: int, i: np.ndarray, j: np.ndarray, v: np.ndarray) -> spmatrix:
     """
-    Assemble symmetric matrix via incremental updates in LIL.
+    Assemble asymmetric matrix via incremental updates in LIL.
     """
     a = lil_matrix((n, n), dtype=np.float64)
     for r, c, x in zip(i, j, v):
         a[r, c] += x
-        if r != c:
-            a[c, r] += x
     return a
 
 
 def assemble_csr(n: int, i: np.ndarray, j: np.ndarray, v: np.ndarray) -> spmatrix:
     """
-    Assemble symmetric matrix via incremental updates in CSR (typically slow).
+    Assemble asymmetric matrix via incremental updates in CSR (typically slow).
     Included for direct structure comparison.
     """
     a = csr_matrix((n, n), dtype=np.float64)
@@ -96,14 +85,12 @@ def assemble_csr(n: int, i: np.ndarray, j: np.ndarray, v: np.ndarray) -> spmatri
         warnings.simplefilter("ignore", SparseEfficiencyWarning)
         for r, c, x in zip(i, j, v):
             a[r, c] += x
-            if r != c:
-                a[c, r] += x
     return a
 
 
 def assemble_csc(n: int, i: np.ndarray, j: np.ndarray, v: np.ndarray) -> spmatrix:
     """
-    Assemble symmetric matrix via incremental updates in CSC (typically slow).
+    Assemble asymmetric matrix via incremental updates in CSC (typically slow).
     Included for direct structure comparison.
     """
     a = csc_matrix((n, n), dtype=np.float64)
@@ -111,8 +98,6 @@ def assemble_csc(n: int, i: np.ndarray, j: np.ndarray, v: np.ndarray) -> spmatri
         warnings.simplefilter("ignore", SparseEfficiencyWarning)
         for r, c, x in zip(i, j, v):
             a[r, c] += x
-            if r != c:
-                a[c, r] += x
     return a
 
 
@@ -128,7 +113,7 @@ def benchmark(
     Parameters:
     - fn: Assembly function to benchmark.
     - n: Matrix dimension.
-    - i, j, v: Upper-triangle entries to assemble.
+    - i, j, v: Entries to assemble.
     - repeats: Number of benchmark repetitions.'''
     times = []
     peak_memory = 0
@@ -211,31 +196,29 @@ def benchmark_conversions(
 
 
 def benchmark_single_n(
-    n: int, upper_nnz: int, repeats: int, seed: int, outdir: str = "."
+    n: int, nnz: int, repeats: int, seed: int, outdir: str = "."
 ) -> None:
     """
-    Benchmark assembly of a single symmetric matrix with given parameters.
+    Benchmark assembly of a single asymmetric matrix with given parameters.
     Produces a table with runtimes for COO, CSR, LIL, and CSC formats.
     
     Parameters:
     - n: Matrix dimension.
-    - upper_nnz: Number of generated upper-triangle entries.
+    - nnz: Number of entries to generate.
     - repeats: Number of benchmark repetitions.
     - seed: Random seed for reproducibility.
     - outdir: Output directory for results.
     """
-    if upper_nnz > (n * (n + 1)) // 2:
+    if nnz > (n * n):
         raise ValueError(
-            f"upper-nnz {upper_nnz} exceeds total upper-triangle entries "
-            f"{(n * (n + 1)) // 2} for n={n}"
+            f"nnz {nnz} exceeds total entries {n * n} for n={n}"
         )
     
     start_time = time.perf_counter()
-    i, j, v = generate_upper_tri_entries(n, upper_nnz, seed)
+    i, j, v = generate_random_entries(n, nnz, seed)
     end_time = time.perf_counter()
     time_taken_for_generation = end_time - start_time
-    print(f"Generated {upper_nnz} upper-triangle entries for n={n} in {time_taken_for_generation:.6f} seconds.")
-
+    print(f"Generated {nnz} random entries for n={n} in {time_taken_for_generation:.6f} seconds.")
     builders = {
         "COO": assemble_coo,
         "LIL": assemble_lil,
@@ -249,7 +232,7 @@ def benchmark_single_n(
 
     # Correctness: compare all against COO result.
     ref = results["COO"]["matrix"]
-    print(f"\nSymmetric assembly benchmark (n={n}, upper_nnz={upper_nnz})")
+    print(f"\nAsymmetric assembly benchmark (n={n}, nnz={nnz})")
     print("-" * 98)
     print(f"{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}")
     print("-" * 98)
@@ -278,7 +261,7 @@ def benchmark_single_n(
     # Ensure output directory exists
     os.makedirs(outdir, exist_ok=True)
     
-    output_path = f"{outdir}/symmetric_matrix_benchmark.csv"
+    output_path = f"{outdir}/asymmetric_matrix_benchmark.csv"
     table.to_csv(output_path, index=False)
     print(f"Saved table to {output_path}")
     print(table.to_string(index=False))
@@ -319,7 +302,7 @@ def benchmark_single_n(
         ]
     )
     
-    conversion_output_path = f"{outdir}/symmetric_matrix_conversion_benchmark.csv"
+    conversion_output_path = f"{outdir}/asymmetric_matrix_conversion_benchmark.csv"
     conversion_table.to_csv(conversion_output_path, index=False)
     print(f"\nSaved conversion table to {conversion_output_path}")
     print(conversion_table.to_string(index=False))
@@ -335,7 +318,7 @@ def benchmark_scaling(
     
     Parameters:
     - matrix_sizes: List of matrix dimensions to benchmark.
-    - nnz_ratio_sizes: List of ratios of nnz to n (upper_nnz = int(n * nnz_ratio) for each n).
+    - nnz_ratio_sizes: List of ratios of nnz to n (nnz = int(n * nnz_ratio) for each n).
     - repeats: Number of benchmark repetitions per matrix size.
     - seed: Random seed for reproducibility.
     """
@@ -351,23 +334,18 @@ def benchmark_scaling(
     print(f"NNZ ratios (nnz/n): {nnz_ratio_sizes}")
     print(f"Repeats per size: {repeats}")
     print("-" * 140)
-    print(f"{'N':<8}{'NNZ_Ratio':<12}{'Upper_NNZ':<12}{'Entry_Gen(s)':>13}{'COO_Avg(s)':>15}{'LIL_Avg(s)':>15}{'COO_Mem(MB)':>12}{'LIL_Mem(MB)':>12}")
+    print(f"{'N':<8}{'NNZ_Ratio':<12}{'NNZ':<12}{'Entry_Gen(s)':>13}{'COO_Avg(s)':>15}{'LIL_Avg(s)':>15}{'COO_Mem(MB)':>12}{'LIL_Mem(MB)':>12}")
     print("-" * 140)
     
     for n in sizes:
         for nnz_ratio in nnz_ratio_sizes:
             if nnz_ratio <= 0:
                 raise ValueError(f"NNZ ratio must be positive, got {nnz_ratio}")
-            upper_nnz = int(n * nnz_ratio)
-            if upper_nnz > (n * (n + 1)) // 2:
-                raise ValueError(
-                    f"upper_nnz {upper_nnz} exceeds total upper-triangle entries "
-                    f"{(n * (n + 1)) // 2} for n={n}"
-                )
+            nnz = int(n * nnz_ratio)
             
             # Time entry generation
             start_time = time.perf_counter()
-            i, j, v = generate_upper_tri_entries(n, upper_nnz, seed)
+            i, j, v = generate_random_entries(n, nnz, seed)
             end_time = time.perf_counter()
             gen_time = end_time - start_time
             
@@ -387,7 +365,7 @@ def benchmark_scaling(
             all_results.append({
                 "N": n,
                 "NNZ_Ratio": nnz_ratio,
-                "Upper_NNZ": upper_nnz,
+                "NNZ": nnz,
                 "Entry_Gen_Time_s": gen_time,
                 "COO_Avg_s": coo_result["avg_s"],
                 "LIL_Avg_s": lil_result["avg_s"],
@@ -395,7 +373,7 @@ def benchmark_scaling(
                 "LIL_Peak_Memory_MB": lil_result["peak_memory_mb"],
             })
             
-            print(f"{n:<8}{nnz_ratio:<12.1f}{upper_nnz:<12}{gen_time:>13.6f}{coo_result['avg_s']:>15.6f}"
+            print(f"{n:<8}{nnz_ratio:<12.1f}{nnz:<12}{gen_time:>13.6f}{coo_result['avg_s']:>15.6f}"
                   f"{lil_result['avg_s']:>15.6f}{coo_result['peak_memory_mb']:>12.2f}{lil_result['peak_memory_mb']:>12.2f}")
     
     # Create plots
@@ -453,13 +431,13 @@ def benchmark_scaling(
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plot_path = f"{outdir}/symmetric_matrix_scaling.png"
+    plot_path = f"{outdir}/asymmetric_matrix_scaling.png"
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     print(f"\nSaved scaling plots to {plot_path}")
     
     # Save comprehensive timing data to CSV
     scaling_table = pd.DataFrame(all_results)
-    csv_path = f"{outdir}/symmetric_matrix_scaling.csv"
+    csv_path = f"{outdir}/asymmetric_matrix_scaling.csv"
     scaling_table.to_csv(csv_path, index=False)
     print(f"Saved timing data to {csv_path}")
     print("\n" + "="*140)
@@ -468,10 +446,10 @@ def benchmark_scaling(
     print(scaling_table.to_string(index=False))
     print("-" * 95)
 
-#main function and additional plotting functions for comparison across matrix types
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Benchmark symmetric sparse matrix assembly."
+        description="Benchmark asymmetric sparse matrix assembly."
     )
     
     # Mode selection
@@ -486,10 +464,10 @@ def main() -> None:
     # Arguments for single-N benchmark
     parser.add_argument("--n", type=int, default=2000, help="Matrix dimension (used in 'single' mode).")
     parser.add_argument(
-        "--upper-nnz",
+        "--nnz",
         type=int,
         default=20000,
-        help="Number of generated upper-triangle entries (with duplicates).",
+        help="Number of entries to generate.",
     )
     parser.add_argument("--repeats", type=int, default=3, help="Benchmark repetitions.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
@@ -518,7 +496,7 @@ def main() -> None:
     args = parser.parse_args()
     
     if args.mode == "single":
-        benchmark_single_n(args.n, args.upper_nnz, args.repeats, args.seed, args.outdir)
+        benchmark_single_n(args.n, args.nnz, args.repeats, args.seed, args.outdir)
     elif args.mode == "scaling":
         benchmark_scaling(args.matrix_sizes, args.nnz_ratio, args.repeats, args.seed, args.outdir)
 
