@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=spmv-phase1
-#SBATCH --partition=gpu
+#SBATCH --partition=cmt
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
@@ -14,7 +14,7 @@
 set -e
 
 # Load necessary modules
-module load python/3.11
+#module load python/3.11
 module load openblas  # Optional: for optimized linear algebra
 
 # Create logs directory if it doesn't exist
@@ -30,7 +30,7 @@ echo "Start time: $(date)"
 echo "=========================================="
 
 # Navigate to working directory
-cd /home/$(whoami)/utd-hpc-sparse-matrix-project/src/matrix_vector_mult || exit 1
+#cd /home/$(whoami)/utd-hpc-sparse-matrix-project/src/matrix_vector_mult || exit 1
 
 # Create results directory
 mkdir -p results
