@@ -19,7 +19,7 @@ from typing import Dict, List, Sequence, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.sparse import coo_matrix, random as sparse_random
+from scipy.sparse import coo_matrix
 
 from spmv_python import benchmark_spmv_format
 
@@ -40,13 +40,18 @@ def generate_test_matrix(
     - x: Random dense vector
     """
     nnz = int(n * nnz_ratio)
-    density = nnz / (n * n)
-    
-    # Generate random sparse matrix
-    A = sparse_random(n, n, density=density, format='coo', random_state=seed)
-    
-    # Generate random vector
     rng = np.random.default_rng(seed)
+
+    # Generate sparse coordinates directly so memory scales with nnz rather
+    # than the full n x n index space. Duplicates are acceptable at these
+    # densities and are merged afterward.
+    row = rng.integers(0, n, size=nnz, dtype=np.int32)
+    col = rng.integers(0, n, size=nnz, dtype=np.int32)
+    data = rng.standard_normal(nnz)
+    A = coo_matrix((data, (row, col)), shape=(n, n))
+    A.sum_duplicates()
+
+    # Generate random vector
     x = rng.standard_normal(n)
     
     return A, x
