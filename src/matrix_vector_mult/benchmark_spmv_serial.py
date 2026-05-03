@@ -1,27 +1,27 @@
 """
 Phase 1: Serial SpMV benchmarking on laptop.
 
-Benchmarks SpMV across COO, CSR, CSC, LIL formats with multiple matrix sizes.
+Benchmarks SpMV across selected sparse formats with multiple matrix sizes.
 Generates CSV output and visualization comparing format performance.
 """
 #SAMPLE USAGE:
 # Quick test (smaller matrices, fewer repeats)
-#python benchmark_spmv_serial.py --matrix-sizes 500 1000 --repeats 2 --nnz-ratio 3.0 --outdir results
+#python benchmark_spmv_serial.py --matrix-sizes 500 1000 --repeats 2 --nnz-ratio 3.0 --formats coo csr csc --outdir results
 
 # Detailed test (larger matrices, more repeats)
-#python benchmark_spmv_serial.py --matrix-sizes 1000 5000 10000 --repeats 10 --nnz-ratio 8.0 --outdir results
+#python benchmark_spmv_serial.py --matrix-sizes 1000 5000 10000 --repeats 10 --formats coo csr csc lil --nnz-ratio 8.0 --outdir results
 
 from __future__ import annotations
 import argparse
 import os
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.sparse import coo_matrix, random as sparse_random
 
-from spmv_python import benchmark_spmv_format, spmv
+from spmv_python import benchmark_spmv_format
 
 
 def generate_test_matrix(
@@ -57,7 +57,8 @@ def benchmark_spmv_serial(
     repeats: int = 5,
     nnz_ratio: float = 5.0,
     outdir: str = "results",
-    seed: int = 0
+    seed: int = 0,
+    formats: Sequence[str] = ("coo", "csr", "csc", "lil"),
 ) -> None:
     """
     Benchmark serial SpMV across multiple matrix sizes and formats.
@@ -68,8 +69,9 @@ def benchmark_spmv_serial(
     - nnz_ratio: Ratio of nnz to n
     - outdir: Output directory for results
     - seed: Random seed
+    - formats: Sparse formats to benchmark
     """
-    formats = ["COO", "CSR", "CSC", "LIL"]
+    formats = [fmt.upper() for fmt in formats]
     all_results = []
     
     print("\n" + "=" * 120)
@@ -78,6 +80,7 @@ def benchmark_spmv_serial(
     print(f"Matrix sizes: {matrix_sizes}")
     print(f"NNZ ratio (nnz/n): {nnz_ratio}")
     print(f"Repeats per size: {repeats}")
+    print(f"Formats: {formats}")
     print(f"Output directory: {outdir}")
     print("-" * 120)
     print(f"{'N':<10}{'NNZ':<12}{'Format':<8}{'Avg_Time(s)':>15}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}{'GFlop/s':>12}")
@@ -212,6 +215,14 @@ def main():
         default=0,
         help="Random seed for reproducibility.",
     )
+    parser.add_argument(
+        "--formats",
+        type=str,
+        nargs="+",
+        choices=["coo", "csr", "csc", "lil"],
+        default=["coo", "csr", "csc", "lil"],
+        help="Sparse formats to benchmark.",
+    )
     
     args = parser.parse_args()
     
@@ -220,7 +231,8 @@ def main():
         args.repeats,
         args.nnz_ratio,
         args.outdir,
-        args.seed
+        args.seed,
+        args.formats,
     )
 
 

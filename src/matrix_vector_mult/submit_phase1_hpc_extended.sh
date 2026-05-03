@@ -39,6 +39,7 @@ echo "Running benchmark with very large matrices..."
 python benchmark_spmv_serial.py \
     --matrix-sizes 500000 1000000 \
     --repeats 3 \
+    --formats coo csr csc \
     --nnz-ratio 3.0 \
     --outdir results_extended \
     --seed 0
