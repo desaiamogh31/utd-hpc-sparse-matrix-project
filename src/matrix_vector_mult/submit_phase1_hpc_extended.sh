@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=spmv-phase1-extended
-#SBATCH --partition=gpu
+#SBATCH --partition=cmt
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
@@ -14,7 +14,7 @@
 set -e
 
 # Load necessary modules
-module load python/3.11
+#module load python/3.11
 module load openblas
 
 # Create logs directory
@@ -30,17 +30,17 @@ echo "Start time: $(date)"
 echo "=========================================="
 
 # Navigate to working directory
-cd /home/$(whoami)/utd-hpc-sparse-matrix-project/src/matrix_vector_mult || exit 1
+#cd /home/$(whoami)/utd-hpc-sparse-matrix-project/src/matrix_vector_mult || exit 1
 
 mkdir -p results
 
 # Run with very large matrices (will be slower, more memory intensive)
 echo "Running benchmark with very large matrices..."
 python benchmark_spmv_serial.py \
-    --matrix-sizes 500000 1000000 \
-    --repeats 3 \
+    --matrix-sizes 1000000 10000000 100000000 \
+    --repeats 5 \
     --formats coo csr csc \
-    --nnz-ratio 3.0 \
+    --nnz-ratios 10.0 20.0 40.0 80.0 \
     --outdir results_extended \
     --seed 0
 
