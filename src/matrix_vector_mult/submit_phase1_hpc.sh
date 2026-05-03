@@ -38,10 +38,10 @@ mkdir -p results
 # Run Phase 1 benchmark with larger matrix sizes for HPC
 echo "Running benchmark with larger matrices..."
 python benchmark_spmv_serial.py \
-    --matrix-sizes 50000 100000 200000 \
+    --matrix-sizes 50000 100000 200000 400000 \
     --repeats 5 \
     --formats coo csr csc \
-    --nnz-ratio 5.0 \
+    --nnz-ratio 40.0 \
     --outdir results \
     --seed 0
 
