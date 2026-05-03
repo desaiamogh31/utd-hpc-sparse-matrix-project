@@ -8,7 +8,7 @@ This directory contains SLURM job scripts to run Phase 1 (serial SpMV benchmarki
 Standard Phase 1 benchmark on HPC with larger matrices.
 
 **Configuration:**
-- Partition: gpu
+- Partition: <your partition>
 - Nodes: 1
 - CPUs: 4 (serial execution, extra cores for I/O)
 - Memory: 32 GB
