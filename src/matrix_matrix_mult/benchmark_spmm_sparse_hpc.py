@@ -393,6 +393,107 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
     print(f"  ✓ Saved: {plot_path}")
     plt.close()
 
+    # Per-matrix figure 1: runtime vs threads, with separate lines for B column counts
+    for matrix_name in matrices:
+        matrix_df = df[df["matrix_name"] == matrix_name]
+        matrix_meta = (
+            matrix_df[["m", "n", "nnz_a"]]
+            .drop_duplicates()
+            .iloc[0]
+        )
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle(
+            (
+                f"{matrix_name}: Runtime vs Threads by B Column Count\n"
+                f"Matrix {int(matrix_meta['m'])}x{int(matrix_meta['n'])}, nnz={int(matrix_meta['nnz_a'])}, "
+                f"B sparsity: {sparsity_label}"
+            ),
+            fontsize=14,
+            fontweight="bold",
+        )
+
+        for ax, algo in zip(axes.flatten(), ["row-wise", "outer-product", "blocked", "scipy"]):
+            algo_df = matrix_df[matrix_df["algorithm"] == algo]
+            for k in sorted(algo_df["k"].unique()):
+                series = (
+                    algo_df[algo_df["k"] == k]
+                    .groupby("num_threads")["mean_time_sec"]
+                    .mean()
+                    .sort_index()
+                )
+                ax.plot(
+                    series.index,
+                    series.values,
+                    marker="o",
+                    linewidth=2,
+                    label=f"k={int(k)}",
+                )
+            ax.set_title(algo)
+            ax.set_xlabel("Threads")
+            ax.set_ylabel("Mean Runtime (seconds)")
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+        plt.tight_layout()
+        plot_path = os.path.join(
+            output_dir, f"spmm_sparse_hpc_threads_by_k_{matrix_name}.png"
+        )
+        plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+        print(f"  ✓ Saved: {plot_path}")
+        plt.close()
+
+    # Per-matrix figure 2: runtime vs B sparsity, with separate lines for thread counts
+    for matrix_name in matrices:
+        matrix_df = df[df["matrix_name"] == matrix_name]
+        matrix_meta = (
+            matrix_df[["m", "n", "nnz_a"]]
+            .drop_duplicates()
+            .iloc[0]
+        )
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle(
+            (
+                f"{matrix_name}: Runtime vs B Sparsity by Thread Count\n"
+                f"Matrix {int(matrix_meta['m'])}x{int(matrix_meta['n'])}, nnz={int(matrix_meta['nnz_a'])}"
+            ),
+            fontsize=14,
+            fontweight="bold",
+        )
+
+        for ax, algo in zip(axes.flatten(), ["row-wise", "outer-product", "blocked", "scipy"]):
+            algo_df = matrix_df[matrix_df["algorithm"] == algo]
+            for num_threads in sorted(algo_df["num_threads"].unique()):
+                series = (
+                    algo_df[algo_df["num_threads"] == num_threads]
+                    .groupby("sparsity_b")["mean_time_sec"]
+                    .mean()
+                    .sort_index()
+                )
+                ax.plot(
+                    series.index,
+                    series.values,
+                    marker="o",
+                    linewidth=2,
+                    label=f"threads={int(num_threads)}",
+                )
+            ax.set_title(algo)
+            ax.set_xlabel("B Sparsity")
+            ax.set_ylabel("Mean Runtime (seconds)")
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+        plt.tight_layout()
+        plot_path = os.path.join(
+            output_dir, f"spmm_sparse_hpc_runtime_by_sparsity_{matrix_name}.png"
+        )
+        plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+        print(f"  ✓ Saved: {plot_path}")
+        plt.close()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
