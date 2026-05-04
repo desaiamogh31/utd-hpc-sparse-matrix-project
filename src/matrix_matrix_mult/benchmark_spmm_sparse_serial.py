@@ -61,20 +61,22 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "matrix_vector_mult"))
 
 from spmm_python import (
     benchmark_spmm_algorithm_sparse_b,
 )
+from load_real_matrices import download_matrix
 
 
 # Metadata for Phase 2 matrices
 MATRIX_METADATA = {
     "1138_bus": ("HB", "1138_bus"),
     "abb313": ("HB", "abb313"),
-    "bcsstk30": ("DIMACS10", "bcsstk30"),
+    "bcsstk30": ("HB", "bcsstk30"),
     "delaunay_n15": ("DIMACS10", "delaunay_n15"),
     "delaunay_n19": ("DIMACS10", "delaunay_n19"),
-    "pkustk14": ("DIMACS10", "pkustk14"),
+    "pkustk14": ("Chen", "pkustk14"),
 }
 
 
@@ -116,8 +118,10 @@ def load_local_matrix(matrix_name, cache_dir="matrices"):
     if matrix_name in MATRIX_METADATA:
         try:
             group, name = MATRIX_METADATA[matrix_name]
-            from load_matrices import download_matrix
-            A = download_matrix(group, name, cache_dir)
+            print(f"  {matrix_name} not found in cache; downloading {group}/{name}...")
+            filepath = download_matrix(group, name, cache_dir)
+            from scipy.io import mmread
+            A = csr_matrix(mmread(filepath))
             return A, f"SuiteSparse download ({group}/{name})"
         except Exception as e:
             print(f"  Warning: Failed to download from SuiteSparse: {e}")
