@@ -328,6 +328,8 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
     ax.set_xlabel("B Column Count (k)")
     ax.set_ylabel("Mean Time (seconds)")
     ax.set_title(f"Execution Time vs B Columns (SciPy, {max_thread} threads setting)")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
     ax.legend()
 
@@ -342,6 +344,8 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
     ax.set_xlabel("B Column Count (k)")
     ax.set_ylabel("GFlop/s")
     ax.set_title(f"Performance vs B Columns (SciPy, {max_thread} threads setting)")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
     ax.legend()
 
@@ -378,6 +382,8 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
         f"Thread Scaling on {largest_matrix}\nAveraged over sparse B column counts, B sparsity: {sparsity_label}"
     )
     ax.set_xticks(sorted(thread_df["num_threads"].unique()))
+    ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
     ax.legend()
 

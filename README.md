@@ -32,6 +32,15 @@ This project:
 3. Benchmarks **SpMV** (sparse matrix–vector multiplication) and **SpMM** (sparse matrix–matrix multiplication) across formats.
 4. Explores parallel implementations using **OpenMP** and/or **MPI**.
 
+### Project Status
+
+| Phase | Component | Status |
+|-------|-----------|--------|
+| **Phase 1** | Finite-element assembly (CSR, CSC, COO, LIL) | ✅ Complete |
+| **Phase 2** | SpMV: Serial Python + OpenMP (scaling: 1-8 threads) | ✅ Complete |
+| **Phase 3a** | SpMM: Serial Python (3 algorithms) + OpenMP | ✅ Complete |
+| **Phase 3b** | SpMM: MPI distributed memory | 🔄 In Progress |
+
 ---
 
 ## Storage Formats
@@ -47,12 +56,35 @@ This project:
 
 ## Features
 
-- **Sparse matrix assembly** — constructs global sparse matrices by accumulating local element contributions.
-- **Format conversion** — routines to convert between COO, CSR, CSC, LIL.
-- **SpMV** — `y = A * x` benchmarked for all formats.
-- **SpMM** — `C = A * B` for pairs of sparse matrices.
-- **Correctness validation** — results are cross-checked against a dense reference implementation.
-- **Performance profiling** — wall-clock timings, GFlop/s, and memory-bandwidth utilization reported for each format and kernel.
+### Phase 1: Finite-Element Assembly ✅
+- **Multiple storage formats** — COO, CSR, CSC, LIL implementations
+- **Symmetric/asymmetric matrices** — supports various matrix types
+- **Laplacian assembly** — common test case (2D/3D FEM discretization)
+- **Format conversion** — routines to convert between all formats
+- **Assembly benchmarking** — timing and performance analysis across formats
+
+### Phase 2: Sparse Matrix–Vector Multiplication (SpMV) ✅
+- **Serial Python baseline** — reference implementation with validation
+- **OpenMP parallelization** — shared-memory scaling (1-8 threads)
+- **Real-world matrices** — benchmarked on SuiteSparse matrices (bus, bcsstk30, delaunay, etc.)
+- **Scaling analysis** — strong and weak scaling metrics
+- **Performance metrics** — GFlop/s, memory bandwidth, execution time tracking
+
+### Phase 3a: Sparse Matrix–Matrix Multiplication (SpMM) ✅
+- **Three algorithmic variants**:
+  - Row-wise: CSR-friendly row parallelization
+  - Outer-product: Column-accumulation with rank-1 updates
+  - Blocked inner-product: Cache-aware column blocking
+- **Serial Python baseline** — all three algorithms with sparse output (CSR)
+- **OpenMP scaling** — thread-level parallelism with dynamic scheduling
+- **Variable dense columns** — k=1,4,8,16,32,64,128,256,512 for memory-bound to compute-bound analysis
+- **Comprehensive benchmarking** — GFlop/s, sparsity metrics, memory usage tracking
+
+### General Features
+- **Correctness validation** — results are cross-checked against dense reference implementation
+- **Performance profiling** — wall-clock timings, GFlop/s, memory-bandwidth utilization reported
+- **Matrix market support** — load and process real sparse matrices from SuiteSparse collection
+- **CSV results export** — all benchmarks saved for analysis and visualization
 
 ---
 
