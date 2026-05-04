@@ -41,7 +41,7 @@ This project:
 | **COO** | Coordinate (triplet) | Assembly, incremental construction |
 | **CSR** | Compressed Sparse Row | Row-wise access, SpMV |
 | **CSC** | Compressed Sparse Column | Column-wise access, sparse direct solvers |
-| **LIL** | List of Lists
+| **LIL** | List of Lists | Assembly, incremental construction
 
 ---
 
