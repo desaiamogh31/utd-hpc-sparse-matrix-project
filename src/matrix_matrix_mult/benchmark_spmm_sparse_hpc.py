@@ -444,7 +444,7 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
         print(f"  ✓ Saved: {plot_path}")
         plt.close()
 
-    # Per-matrix figure 2: runtime vs B sparsity, with separate lines for thread counts
+    # Per-matrix figure 2: runtime vs nnz(B), with separate lines for thread counts
     for matrix_name in matrices:
         matrix_df = df[df["matrix_name"] == matrix_name]
         matrix_meta = (
@@ -455,7 +455,7 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         fig.suptitle(
             (
-                f"{matrix_name}: Runtime vs B Sparsity by Thread Count\n"
+                f"{matrix_name}: Runtime vs nnz(B) by Thread Count\n"
                 f"Matrix {int(matrix_meta['m'])}x{int(matrix_meta['n'])}, nnz={int(matrix_meta['nnz_a'])}"
             ),
             fontsize=14,
@@ -467,7 +467,7 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
             for num_threads in sorted(algo_df["num_threads"].unique()):
                 series = (
                     algo_df[algo_df["num_threads"] == num_threads]
-                    .groupby("sparsity_b")["mean_time_sec"]
+                    .groupby("nnz_b")["mean_time_sec"]
                     .mean()
                     .sort_index()
                 )
@@ -479,7 +479,7 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
                     label=f"threads={int(num_threads)}",
                 )
             ax.set_title(algo)
-            ax.set_xlabel("B Sparsity")
+            ax.set_xlabel("nnz(B)")
             ax.set_ylabel("Mean Runtime (seconds)")
             ax.set_xscale("log")
             ax.set_yscale("log")
@@ -488,7 +488,7 @@ def plot_results(df: pd.DataFrame, output_dir: str) -> None:
 
         plt.tight_layout()
         plot_path = os.path.join(
-            output_dir, f"spmm_sparse_hpc_runtime_by_sparsity_{matrix_name}.png"
+            output_dir, f"spmm_sparse_hpc_runtime_by_nnz_{matrix_name}.png"
         )
         plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         print(f"  ✓ Saved: {plot_path}")
