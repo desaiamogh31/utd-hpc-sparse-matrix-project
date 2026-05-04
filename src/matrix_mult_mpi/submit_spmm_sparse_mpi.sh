@@ -1,44 +1,42 @@
 #!/bin/bash
-#SBATCH --job-name=spmm_sparse_hpc
-#SBATCH --output=logs/spmm_sparse_hpc_%j.log
-#SBATCH --error=logs/spmm_sparse_hpc_%j.err
+#SBATCH --job-name=spmm_sparse_mpi
+#SBATCH --output=logs/spmm_sparse_mpi_%j.log
+#SBATCH --error=logs/spmm_sparse_mpi_%j.err
 #SBATCH --partition=cmt
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=64
+#SBATCH --ntasks=16
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=128G
 
 ################################################################################
-# HPC Benchmarking: Sparse-B SpMM OpenMP on Real Sparse Matrices
+# HPC Benchmarking: Sparse-B SpMM with MPI
 #
-# Benchmarks sparse matrix-matrix multiplication C = A @ B using:
-# - OpenMP custom kernels + SciPy baseline
-# - Real matrices from the local cache / Phase 2 cache
-# - Strong scaling across a single HPC node
-# - The larger matrices that are skipped in the laptop benchmark
+# Mirrors the OpenMP sparse-B SpMM benchmark, but uses MPI process scaling
+# through repeated mpirun launches from a single SLURM job.
 #
 # Usage:
-#   sbatch submit_spmm_sparse_hpc.sh
+#   sbatch submit_spmm_sparse_mpi.sh
 #
 ################################################################################
 
 set -e
 
 echo "=========================================="
-echo "SPMM SPARSE-B HPC BENCHMARK - Job Started"
+echo "SPMM SPARSE-B MPI BENCHMARK - Job Started"
 echo "=========================================="
 echo "Job ID:          $SLURM_JOB_ID"
 echo "Job Name:        $SLURM_JOB_NAME"
 echo "Hostname:        $(hostname)"
-echo "Num CPUs:        $SLURM_CPUS_PER_TASK"
+echo "Num Tasks:       $SLURM_NTASKS"
+echo "CPUs per Task:   $SLURM_CPUS_PER_TASK"
 echo "Memory:          $SLURM_MEM_PER_NODE"
 echo "Time Limit:      $SLURM_TIME_LIMIT"
 echo "Start Time:      $(date)"
 echo "=========================================="
 
 mkdir -p logs
-mkdir -p results_hpc_spmm
+mkdir -p results_hpc_spmm_mpi
 
 echo ""
 echo "System Information:"
@@ -47,40 +45,33 @@ echo "CPU Count: $(nproc)"
 echo "Memory: $(free -h | head -2 || true)"
 echo ""
 
-# Load cluster modules if available
 module load gcc || true
-# module load python || true
+module load openmpi || true
 
-# Keep matplotlib writable on shared systems
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 export MPLCONFIGDIR="${PWD}/.matplotlib"
 mkdir -p "$MPLCONFIGDIR"
 
-echo "Checking C++ OpenMP library..."
-if [ ! -f "spmm_openmp.so" ]; then
-    echo "Compiling spmm_openmp.cpp..."
-    python build.py
-    echo "✓ Compilation complete"
-else
-    echo "✓ spmm_openmp.so already compiled"
-fi
-
 echo ""
 echo "=========================================="
-echo "Starting Sparse-B SpMM HPC Benchmark"
+echo "Starting Sparse-B SpMM MPI Benchmark"
 echo "=========================================="
 echo ""
 
-python benchmark_spmm_sparse_hpc.py \
-    --threads 1 2 4 8 16 32 64 \
-    --b-cols 4 8 16 32 64 128 \
+python benchmark_spmm_sparse_mpi.py \
+    --processes 1 2 4 8 16 \
+    --b-cols 4 8 16 \
     --sparsity 0.10 \
-    --repeats 5 \
-    --outdir results_hpc_spmm
+    --repeats 3 \
+    --outdir results_hpc_spmm_mpi
 
 echo ""
 echo "=========================================="
 echo "Benchmark Complete"
 echo "=========================================="
-echo "Results saved to: results_hpc_spmm/"
+echo "Results saved to: results_hpc_spmm_mpi/"
 echo "End Time: $(date)"
 echo "=========================================="
