@@ -85,12 +85,14 @@ perf.data.old
 # =============================================================================
 # Matrix Market / data files generated at runtime
 # =============================================================================
+# Exclude all matrix files and directories - download from SuiteSparse as needed
 *.mtx
 *.mtx.out
 *.tar
 *.tar.gz
 *.bin
 matrices/
+**/matrices/
 
 # =============================================================================
 # Editor / IDE files
