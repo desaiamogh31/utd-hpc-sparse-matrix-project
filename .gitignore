@@ -46,6 +46,8 @@ bin/
 obj/
 out/
 results/
+results_*/
+logs/
 *.d
 
 # Autotools / CMake
