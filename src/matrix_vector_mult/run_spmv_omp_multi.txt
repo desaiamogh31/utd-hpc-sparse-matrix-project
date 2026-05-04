@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Run OpenMP SpMV benchmarks with different matrix sizes, thread counts, and NNZ ratios
+# Similar to nbody_omp timing script - collects runtimes across configurations
+
+set -e
+
+# Define arrays for matrix sizes, thread counts, and NNZ ratios
+MATRIX_SIZES=(1000 2000 4000 8000 16000 32000)
+THREAD_COUNTS=(4)
+NNZ_RATIOS=(5.0)  # Can add multiple: (2.0 5.0 10.0)
+
+OUTPUT_DIR="results"
+OUTPUT_FILE="$OUTPUT_DIR/spmv_openmp_runtimes.txt"
+
+# Create output directory
+mkdir -p "$OUTPUT_DIR"
+mkdir -p logs
+
+# Clear output file and add header
+> "$OUTPUT_FILE"
+echo "MatrixSize,Threads,NNZ_Ratio,Avg_Time_s,GFlops" >> "$OUTPUT_FILE"
+
+echo "=========================================="
+echo "SPMV OpenMP Benchmarking"
+echo "=========================================="
+echo "Matrix sizes: ${MATRIX_SIZES[@]}"
+echo "Thread counts: ${THREAD_COUNTS[@]}"
+echo "NNZ ratios: ${NNZ_RATIOS[@]}"
+echo "Output file: $OUTPUT_FILE"
+echo "=========================================="
+
+# Build the shared library first
+echo "Building OpenMP library..."
+python build.py
+
+# Run benchmarks for each configuration
+for ratio in "${NNZ_RATIOS[@]}"; do
+    for n in "${MATRIX_SIZES[@]}"; do
+        echo ""
+        echo "Testing matrix size n=$n, nnz_ratio=$ratio..."
+        
+        for threads in "${THREAD_COUNTS[@]}"; do
+            echo "  Running with $threads thread(s)..."
+            
+            # Run benchmark for this configuration
+            output=$(python -c "
+import sys
+sys.path.insert(0, '.')
+from benchmark_spmv_openmp import benchmark_spmv_omp, generate_test_matrix
+
+A, x = generate_test_matrix($n, $ratio, seed=0)
+result = benchmark_spmv_omp(A, x, $threads, repeats=5)
+print(f'{result[\"avg_time_s\"]:.6f},{result[\"gflops\"]:.2f}')
+")
+            
+            # Parse output
+            avg_time=$(echo "$output" | cut -d',' -f1)
+            gflops=$(echo "$output" | cut -d',' -f2)
+            
+            # Append to results file
+            echo "$n,$threads,$ratio,$avg_time,$gflops" >> "$OUTPUT_FILE"
+            
+            echo "    Avg time: ${avg_time}s, GFlops: ${gflops}"
+        done
+    done
+done
+
+echo ""
+echo "=========================================="
+echo "Benchmark complete!"
+echo "Results saved to: $OUTPUT_FILE"
+echo "=========================================="
+echo ""
+echo "Summary:"
+cat "$OUTPUT_FILE"
+echo ""
+echo "To plot results:"
+echo "  python plot_spmv_omp.py --summary"

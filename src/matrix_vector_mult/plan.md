@@ -33,7 +33,7 @@ Implement sparse matrix-vector multiplication (SpMV) with progressive paralleliz
 - **Location:** `src/load_matrices.py` (EXTEND existing if present)
 - **Add functions:**
   - `load_matrix_market(url_or_path)` — load .mtx files from SuiteSparse
-  - `load_synthetic_matrices()` — return dict of assembly-generated matrices
+  - `load_synthetic_maconda trices()` — return dict of assembly-generated matrices
   - `verify_matrix_properties(A)` — check dimensions, nnz, condition number
 - **Output:** Matrices in COO format (for consistency); converts to CSR/CSC as needed
 
