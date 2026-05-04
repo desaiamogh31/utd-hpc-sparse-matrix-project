@@ -2,6 +2,7 @@
 #SBATCH --job-name=phase2_hpc_benchmark
 #SBATCH --output=logs/phase2_hpc_benchmark_%j.log
 #SBATCH --error=logs/phase2_hpc_benchmark_%j.err
+#SBATCH --partition=cmt
 #SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -57,7 +58,7 @@ echo ""
 
 # Load modules if needed (adjust for your cluster)
 module load gcc || true
-module load python || true
+#module load python || true
 
 # Compile OpenMP library if needed
 echo "Checking C++ OpenMP library..."
@@ -82,7 +83,7 @@ echo ""
 # - 3 repetitions for statistical significance
 
 python benchmark_phase2_hpc.py \
-    --matrix-sizes 100000 500000 1000000 \
+    --matrix-sizes 10000 50000 100000 \
     --nnz-ratios 5.0 10.0 20.0 \
     --threads 1 2 4 8 16 32 64 \
     --repeats 3 \
