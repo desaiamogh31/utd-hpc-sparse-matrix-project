@@ -14,10 +14,18 @@ Benchmark 2D Laplacian sparse matrix assembly across COO, CSR, LIL, and CSC.
 The 2D Laplacian on an n×n grid is represented as an (n²)×(n²) matrix with
 the 5-point stencil pattern (center and 4 neighbors).
 
-Usage:
-    python laplacian_matrix.py --mode single --n 100 --repeats 3 --outdir results
-    python laplacian_matrix.py --mode scaling --matrix-sizes 10 20 50 100 --repeats 3 --outdir results
+This script provides two modes:
 """
+''' SAMPLE USAGE:
+# Single grid dimension benchmark
+python laplacian_matrix.py --mode single --n 100 --repeats 3 --outdir results
+
+# Multiple grid dimensions with single mode
+python laplacian_matrix.py --mode single --n 50 100 150 200 --repeats 3 --outdir results
+
+# Scaling with custom grid sizes
+python laplacian_matrix.py --mode scaling --matrix-sizes 10 20 50 100 150 --repeats 2 --outdir results
+'''
 
 from scipy.sparse import (
     SparseEfficiencyWarning,
@@ -347,49 +355,29 @@ def benchmark_scaling(
     print("-" * 85)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Benchmark 2D Laplacian sparse matrix assembly for COO/CSR/LIL/CSC."
-    )
+def benchmark_single_n(
+    n_values: List[int], repeats: int, outdir: str = "."
+) -> None:
+    """
+    Benchmark assembly of Laplacian matrices with given grid dimensions.
+    Produces a table with runtimes for COO, CSR, LIL, and CSC formats across multiple N values.
     
-    # Mode selection
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="single",
-        choices=["single", "scaling"],
-        help="Benchmark mode: 'single' for a single matrix size, 'scaling' for multiple sizes.",
-    )
+    Parameters:
+    - n_values: List of grid dimensions to benchmark.
+    - repeats: Number of benchmark repetitions.
+    - outdir: Output directory for results.
+    """
+    all_results = []
     
-    parser.add_argument(
-        "--n",
-        type=int,
-        default=100,
-        help="Grid dimension for single mode (n×n grid yields n²×n² matrix).",
-    )
-    parser.add_argument("--repeats", type=int, default=3, help="Benchmark repetitions.")
-    parser.add_argument(
-        "--matrix-sizes",
-        type=int,
-        nargs='+',
-        default=[10, 20, 50, 100],
-        help="List of grid dimensions to benchmark (used in 'scaling' mode).",
-    )
-    parser.add_argument("--outdir", type=str, default=".", help="Output directory for results.")
-    args = parser.parse_args()
-
-    if args.mode == "single":
-        n = args.n
-        start_time = time.perf_counter()
-        rows, cols, vals = generate_laplacian_entries(n)
-        end_time = time.perf_counter()
-        time_taken_for_generation = end_time - start_time
-        print(f"Generated Laplacian entries for n={n} (matrix size {n * n}×{n * n}) in {time_taken_for_generation:.6f} seconds.")
+    print(f"\nLaplacian assembly benchmark (repeats={repeats})")
+    print("-" * 160)
+    print(f"{'N':<8}{'Matrix_Size':<15}{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}")
+    print("-" * 160)
+    
+    for n in n_values:
         mat_size = n * n
         
-        # Ensure output directory exists
-        os.makedirs(args.outdir, exist_ok=True)
-
+        rows, cols, vals = generate_laplacian_entries(n)
         builders = {
             "COO": assemble_coo,
             "LIL": assemble_lil,
@@ -399,59 +387,64 @@ def main() -> None:
 
         results = {}
         for name, fn in builders.items():
-            results[name] = benchmark(fn, n, rows, cols, vals, args.repeats)
+            results[name] = benchmark(fn, n, rows, cols, vals, repeats)
 
         # Correctness: compare all against COO result.
         ref = results["COO"]["matrix"]
-        print(f"\n2D Laplacian assembly benchmark (grid n={n}, matrix size {mat_size}×{mat_size})")
-        print("-" * 90)
-        print(
-            f"{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}"
-        )
-        print("-" * 90)
+        
         for name in ["COO", "LIL", "CSR", "CSC"]:
             r = results[name]
             ok = matrices_equal(r["matrix"], ref)
             print(
-                f"{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
+                f"{n:<8}{mat_size:<15}{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
                 f"{r['nnz']:>12d}{r['peak_memory_mb']:>12.2f}{str(ok):>18}"
             )
-        
-        table = pd.DataFrame(
-            [
-                {
-                    "Format": name,
-                    "N" : mat_size,
-                    "Avg Time(s)": results[name]["avg_s"],
-                    "Min(s)": results[name]["min_s"],
-                    "Max(s)": results[name]["max_s"],
-                    "NNZ": results[name]["nnz"],
-                    "Peak_Memory_MB": results[name]["peak_memory_mb"],
-                    "EqualToCOO": matrices_equal(results[name]["matrix"], ref),
-                }
-                for name in ["COO", "LIL", "CSR", "CSC"]
-            ]
-        )
+            
+            all_results.append({
+                "N": n,
+                "Matrix_Size": mat_size,
+                "Format": name,
+                "Avg(s)": r["avg_s"],
+                "Min(s)": r["min_s"],
+                "Max(s)": r["max_s"],
+                "NNZ": r["nnz"],
+                "Peak_Memory_MB": r["peak_memory_mb"],
+                "EqualToCOO": ok,
+            })
 
-        output_path = f"{args.outdir}/laplacian_matrix_benchmark.csv"
-        table.to_csv(output_path, index=False)
-        print(f"\nSaved table to {output_path}")
-        print(table.to_string(index=False))
-        print("-" * 90)
-        print("Note: Direct incremental assembly is usually fastest in LIL/COO,")
-        print("while direct CSR/CSC insertion is typically much slower.")
+    table = pd.DataFrame(all_results)
+
+    # Ensure output directory exists
+    os.makedirs(outdir, exist_ok=True)
+    
+    output_path = f"{outdir}/laplacian_matrix_benchmark.csv"
+    table.to_csv(output_path, index=False)
+    print(f"\nSaved table to {output_path}")
+    print(table.to_string(index=False))
+    print("-" * 160)
+    print("Note: Direct incremental assembly is usually fastest in LIL/COO,")
+    print("while direct CSR/CSC insertion is typically much slower.")
+    
+    # Benchmark conversions from COO/LIL to CSR/CSC for the first N value
+    if n_values:
+        print("\n" + "=" * 160)
+        print(f"Format Conversion Benchmarks (N={n_values[0]})")
+        print("=" * 160)
         
-        # Benchmark conversions from COO/LIL to CSR/CSC
-        print("\n" + "=" * 90)
-        print("Format Conversion Benchmarks")
-        print("=" * 90)
+        # Re-generate entries for first N to benchmark conversions
+        n = n_values[0]
+        rows, cols, vals = generate_laplacian_entries(n)
         
-        source_matrices = {
-            "COO": results["COO"]["matrix"],
-            "LIL": results["LIL"]["matrix"],
+        builders = {
+            "COO": assemble_coo,
+            "LIL": assemble_lil,
         }
         
-        conversion_results = benchmark_conversions(source_matrices, args.repeats)
+        source_matrices = {}
+        for name, fn in builders.items():
+            source_matrices[name] = benchmark(fn, n, rows, cols, vals, repeats)["matrix"]
+        
+        conversion_results = benchmark_conversions(source_matrices, repeats)
         
         print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}")
         print("-" * 63)
@@ -474,12 +467,50 @@ def main() -> None:
             ]
         )
         
-        conversion_output_path = f"{args.outdir}/laplacian_conversion_benchmark.csv"
+        conversion_output_path = f"{outdir}/laplacian_conversion_benchmark.csv"
         conversion_table.to_csv(conversion_output_path, index=False)
         print(f"\nSaved conversion table to {conversion_output_path}")
         print(conversion_table.to_string(index=False))
-        print("-" * 90)
-        
+        print("-" * 160)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Benchmark 2D Laplacian sparse matrix assembly for COO/CSR/LIL/CSC."
+    )
+    
+    # Mode selection
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="single",
+        choices=["single", "scaling"],
+        help="Benchmark mode: 'single' for one or more grid sizes, 'scaling' for multiple sizes.",
+    )
+    
+    # Arguments for single-N benchmark
+    parser.add_argument(
+        "--n",
+        type=int,
+        nargs='+',
+        default=[100],
+        help="Grid dimensions to benchmark (used in 'single' mode). Can specify multiple: --n 50 100 150 200"
+    )
+    parser.add_argument("--repeats", type=int, default=3, help="Benchmark repetitions.")
+    
+    # Arguments for scaling benchmark
+    parser.add_argument(
+        "--matrix-sizes",
+        type=int,
+        nargs='+',
+        default=[10, 20, 50, 100],
+        help="List of grid dimensions to benchmark (used in 'scaling' mode).",
+    )
+    parser.add_argument("--outdir", type=str, default=".", help="Output directory for results.")
+    args = parser.parse_args()
+
+    if args.mode == "single":
+        benchmark_single_n(args.n, args.repeats, args.outdir)
     elif args.mode == "scaling":
         benchmark_scaling(args.matrix_sizes, args.repeats, seed=0, outdir=args.outdir)
 

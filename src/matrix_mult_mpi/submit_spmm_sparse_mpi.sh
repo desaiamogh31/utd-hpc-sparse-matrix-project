@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=spmm_sparse_mpi
 #SBATCH --partition=cmt
-#SBATCH --nodes=1
-#SBATCH --ntasks=16
+#SBATCH --nodes=2
+#SBATCH --ntasks=64
 #SBATCH --cpus-per-task=1
 #SBATCH --time=08:00:00
 #SBATCH --output=spmm_sparse_mpi_%j.log
@@ -28,7 +28,7 @@ EXECUTABLE="spmm_sparse_mpi"
 SOURCE_FILE="spmm_sparse_mpi.cpp"
 RESULTS_DIR="results_hpc_spmm_mpi"
 OUTPUT_CSV="${RESULTS_DIR}/benchmark_spmm_sparse_mpi.csv"
-PROCESS_VALUES=(1 2 4 8 16)
+PROCESS_VALUES=(1 2 4 8 16 32 64)
 MAX_PROCS="${SLURM_NTASKS:-16}"
 JOB_LOG="${RESULTS_DIR}/job_${SLURM_JOB_ID:-manual}.log"
 JOB_ERR="${RESULTS_DIR}/job_${SLURM_JOB_ID:-manual}.err"
@@ -96,7 +96,7 @@ for procs in "${PROCESS_VALUES[@]}"; do
             --output "$(basename "$OUTPUT_CSV")" \
             --cache-dir ../matrix_matrix_mult/matrices \
             --repeats 3 \
-            --b-cols 4 8 16 \
+            --b-cols 4 8 16 32 64\
             --sparsity 0.10 \
             --matrices 1138_bus abb313 delaunay_n15 bcsstk30 delaunay_n19 pkustk14
     else
@@ -105,7 +105,7 @@ for procs in "${PROCESS_VALUES[@]}"; do
             --output "$(basename "$OUTPUT_CSV")" \
             --cache-dir ../matrix_matrix_mult/matrices \
             --repeats 3 \
-            --b-cols 4 8 16 \
+            --b-cols 4 8 16 32 64\
             --sparsity 0.10 \
             --matrices 1138_bus abb313 delaunay_n15 bcsstk30 delaunay_n19 pkustk14 \
             > "${RESULTS_DIR}/mpirun_np${procs}.log" \
