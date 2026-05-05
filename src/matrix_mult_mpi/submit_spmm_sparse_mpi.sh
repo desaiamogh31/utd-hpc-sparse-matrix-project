@@ -23,6 +23,7 @@
 set -euo pipefail
 
 MPI_CXX="mpicxx"
+PLOT_PYTHON="${PLOT_PYTHON:-$(command -v python3 || command -v python || true)}"
 EXECUTABLE="spmm_sparse_mpi"
 SOURCE_FILE="spmm_sparse_mpi.cpp"
 RESULTS_DIR="results_hpc_spmm_mpi"
@@ -49,6 +50,7 @@ echo "Num Tasks:       $SLURM_NTASKS"
 echo "CPUs per Task:   $SLURM_CPUS_PER_TASK"
 echo "Compiler:        $MPI_CXX"
 echo "MPI Launcher:    $MPI_LAUNCHER"
+echo "Plot Python:     ${PLOT_PYTHON:-not found}"
 echo "Working Dir:     $(pwd)"
 echo "Start Time:      $(date)"
 echo "Job Log:         $JOB_LOG"
@@ -111,6 +113,16 @@ for procs in "${PROCESS_VALUES[@]}"; do
     fi
     echo ""
 done
+
+if [ -n "${PLOT_PYTHON:-}" ] && [ -f "$OUTPUT_CSV" ]; then
+    echo "Generating plots from $OUTPUT_CSV..."
+    "$PLOT_PYTHON" benchmark_spmm_sparse_mpi.py \
+        --mode plot \
+        --outdir "$RESULTS_DIR" \
+        --output "$(basename "$OUTPUT_CSV")"
+else
+    echo "Skipping plot generation (python not found or CSV missing)."
+fi
 
 echo "=========================================="
 echo "Benchmark Complete"

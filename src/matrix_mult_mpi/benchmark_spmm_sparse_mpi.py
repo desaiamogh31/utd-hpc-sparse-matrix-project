@@ -518,7 +518,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark sparse-B SpMM with MPI on HPC, mirroring the OpenMP benchmark."
     )
-    parser.add_argument("--mode", choices=["launcher", "worker"], default="launcher")
+    parser.add_argument("--mode", choices=["launcher", "worker", "plot"], default="launcher")
     parser.add_argument(
         "--output",
         "-o",
@@ -579,11 +579,34 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Validate MPI output against serial SciPy on root (expensive).",
     )
+    parser.add_argument(
+        "--input-csv",
+        default=None,
+        help="Optional CSV path to plot in plot mode. Defaults to <outdir>/<output>.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.mode == "plot":
+        if not MATPLOTLIB_AVAILABLE:
+            print("matplotlib not available; skipping plot generation")
+            return
+
+        csv_path = args.input_csv or os.path.join(args.outdir, args.output)
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"Plot input CSV not found: {csv_path}")
+
+        df = pd.read_csv(csv_path)
+        if df.empty:
+            print(f"No rows found in {csv_path}; skipping plot generation")
+            return
+
+        print(f"Generating MPI plots from {csv_path}...")
+        plot_results(df, args.outdir)
+        return
+
     if args.mode == "worker":
         benchmark_worker(
             cache_dir=args.cache_dir,
