@@ -4,7 +4,7 @@ import os
 import time
 import warnings
 import tracemalloc
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
@@ -15,6 +15,15 @@ This script provides two modes:
 """
 ''' SAMPLE USAGE:
 # Single matrix benchmark
+python symmetric_matrix.py --mode single --n 2000 --nnz-ratio 10.0 --repeats 3 --outdir results
+
+# Multiple matrix sizes with single ratio
+python symmetric_matrix.py --mode single --n 1000 2000 5000 --nnz-ratio 5.0 --repeats 3 --outdir results
+
+# Multiple matrix sizes with multiple ratios
+python symmetric_matrix.py --mode single --n 1000 10000 --nnz-ratio 4.0 8.0 16.0 --repeats 3 --outdir results
+
+# Backward-compatible explicit upper-triangle entry counts
 python symmetric_matrix.py --mode single --n 2000 --upper-nnz 10000 --repeats 3 --outdir results
 
 # Scaling with custom sizes and ratio
@@ -211,119 +220,153 @@ def benchmark_conversions(
 
 
 def benchmark_single_n(
-    n: int, upper_nnz: int, repeats: int, seed: int, outdir: str = "."
+    n_values: List[int],
+    nnz_ratios: List[float],
+    repeats: int,
+    seed: int,
+    outdir: str = ".",
+    upper_nnz_values: Optional[List[int]] = None,
 ) -> None:
     """
-    Benchmark assembly of a single symmetric matrix with given parameters.
-    Produces a table with runtimes for COO, CSR, LIL, and CSC formats.
+    Benchmark assembly of symmetric matrices with given parameters.
+    Produces a table with runtimes for COO, CSR, LIL, and CSC formats across
+    multiple N values and NNZ ratios.
     
     Parameters:
-    - n: Matrix dimension.
-    - upper_nnz: Number of generated upper-triangle entries.
+    - n_values: List of matrix dimensions to benchmark.
+    - nnz_ratios: List of upper-triangle nnz ratios
+      (upper_nnz = int(n * nnz_ratio) for each n).
     - repeats: Number of benchmark repetitions.
     - seed: Random seed for reproducibility.
     - outdir: Output directory for results.
+    - upper_nnz_values: Optional explicit upper-triangle entry counts. If
+      provided, these take precedence over nnz_ratios for backward
+      compatibility.
     """
-    if upper_nnz > (n * (n + 1)) // 2:
-        raise ValueError(
-            f"upper-nnz {upper_nnz} exceeds total upper-triangle entries "
-            f"{(n * (n + 1)) // 2} for n={n}"
-        )
-    
-    start_time = time.perf_counter()
-    i, j, v = generate_upper_tri_entries(n, upper_nnz, seed)
-    end_time = time.perf_counter()
-    time_taken_for_generation = end_time - start_time
-    print(f"Generated {upper_nnz} upper-triangle entries for n={n} in {time_taken_for_generation:.6f} seconds.")
+    all_results = []
+    benchmark_cases = []
 
-    builders = {
-        "COO": assemble_coo,
-        "LIL": assemble_lil,
-        "CSR": assemble_csr,
-        "CSC": assemble_csc,
-    }
+    if upper_nnz_values:
+        case_label = f"upper_nnz_values={upper_nnz_values}"
+        for n in n_values:
+            for upper_nnz in upper_nnz_values:
+                if upper_nnz > (n * (n + 1)) // 2:
+                    raise ValueError(
+                        f"upper-nnz {upper_nnz} exceeds total upper-triangle entries "
+                        f"{(n * (n + 1)) // 2} for n={n}"
+                    )
+                benchmark_cases.append((n, upper_nnz, upper_nnz / n))
+    else:
+        case_label = f"nnz_ratios={nnz_ratios}"
+        for n in n_values:
+            for nnz_ratio in nnz_ratios:
+                if nnz_ratio <= 0:
+                    raise ValueError(f"NNZ ratio must be positive, got {nnz_ratio}")
+                upper_nnz = int(n * nnz_ratio)
+                if upper_nnz > (n * (n + 1)) // 2:
+                    raise ValueError(
+                        f"upper_nnz {upper_nnz} exceeds total upper-triangle entries "
+                        f"{(n * (n + 1)) // 2} for n={n} (nnz_ratio={nnz_ratio})"
+                    )
+                benchmark_cases.append((n, upper_nnz, nnz_ratio))
 
-    results = {}
-    for name, fn in builders.items():
-        results[name] = benchmark(fn, n, i, j, v, repeats)
+    print(f"\nSymmetric assembly benchmark ({case_label}, repeats={repeats})")
+    print("-" * 150)
+    print(f"{'N':<8}{'NNZ':<12}{'Ratio':<8}{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ_Result':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}")
+    print("-" * 150)
 
-    # Correctness: compare all against COO result.
-    ref = results["COO"]["matrix"]
-    print(f"\nSymmetric assembly benchmark (n={n}, upper_nnz={upper_nnz})")
-    print("-" * 98)
-    print(f"{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}")
-    print("-" * 98)
-    for name in ["COO", "LIL", "CSR", "CSC"]:
-        r = results[name]
-        ok = matrices_equal(r["matrix"], ref)
-        print(
-            f"{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
-            f"{r['nnz']:>12d}{r['peak_memory_mb']:>12.2f}{str(ok):>18}"
-        )
-    table = pd.DataFrame(
-        [
-            {
+    for n, upper_nnz, nnz_ratio in benchmark_cases:
+        i, j, v = generate_upper_tri_entries(n, upper_nnz, seed)
+        builders = {
+            "COO": assemble_coo,
+            "LIL": assemble_lil,
+            "CSR": assemble_csr,
+            "CSC": assemble_csc,
+        }
+
+        results = {}
+        for name, fn in builders.items():
+            results[name] = benchmark(fn, n, i, j, v, repeats)
+
+        ref = results["COO"]["matrix"]
+        for name in ["COO", "LIL", "CSR", "CSC"]:
+            r = results[name]
+            ok = matrices_equal(r["matrix"], ref)
+            print(
+                f"{n:<8}{upper_nnz:<12}{nnz_ratio:<8.1f}{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
+                f"{r['nnz']:>12d}{r['peak_memory_mb']:>12.2f}{str(ok):>18}"
+            )
+            all_results.append({
+                "N": n,
+                "NNZ": upper_nnz,
+                "NNZ_Ratio": nnz_ratio,
                 "Format": name,
-                "Avg(s)": results[name]["avg_s"],
-                "Min(s)": results[name]["min_s"],
-                "Max(s)": results[name]["max_s"],
-                "NNZ": results[name]["nnz"],
-                "Peak_Memory_MB": results[name]["peak_memory_mb"],
-                "EqualToCOO": matrices_equal(results[name]["matrix"], ref),
-            }
-            for name in ["COO", "LIL", "CSR", "CSC"]
-        ]
-    )
+                "Avg(s)": r["avg_s"],
+                "Min(s)": r["min_s"],
+                "Max(s)": r["max_s"],
+                "NNZ_Result": r["nnz"],
+                "Peak_Memory_MB": r["peak_memory_mb"],
+                "EqualToCOO": ok,
+            })
+
+    table = pd.DataFrame(all_results)
 
     # Ensure output directory exists
     os.makedirs(outdir, exist_ok=True)
     
     output_path = f"{outdir}/symmetric_matrix_benchmark.csv"
     table.to_csv(output_path, index=False)
-    print(f"Saved table to {output_path}")
+    print(f"\nSaved table to {output_path}")
     print(table.to_string(index=False))
-    print("-" * 98)
+    print("-" * 150)
     print("Note: Direct incremental assembly is usually fastest in LIL/COO,")
     print("while direct CSR/CSC insertion is typically much slower.")
     
-    # Benchmark conversions from COO/LIL to CSR/CSC
-    print("\n" + "=" * 98)
-    print("Format Conversion Benchmarks")
-    print("=" * 98)
-    
-    source_matrices = {
-        "COO": results["COO"]["matrix"],
-        "LIL": results["LIL"]["matrix"],
-    }
-    
-    conversion_results = benchmark_conversions(source_matrices, repeats)
-    
-    print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}")
-    print("-" * 63)
-    for name in sorted(conversion_results.keys()):
-        r = conversion_results[name]
-        print(
-            f"{name:<15}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}{r['peak_memory_mb']:>12.2f}"
+    # Benchmark conversions from COO/LIL to CSR/CSC for the first N value and first ratio.
+    if benchmark_cases:
+        first_n, first_upper_nnz, first_ratio = benchmark_cases[0]
+        print("\n" + "=" * 150)
+        print(f"Format Conversion Benchmarks (N={first_n}, nnz_ratio={first_ratio})")
+        print("=" * 150)
+
+        i, j, v = generate_upper_tri_entries(first_n, first_upper_nnz, seed)
+        builders = {
+            "COO": assemble_coo,
+            "LIL": assemble_lil,
+        }
+
+        source_matrices = {}
+        for name, fn in builders.items():
+            source_matrices[name] = benchmark(fn, first_n, i, j, v, repeats)["matrix"]
+
+        conversion_results = benchmark_conversions(source_matrices, repeats)
+
+        print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}")
+        print("-" * 63)
+        for name in sorted(conversion_results.keys()):
+            r = conversion_results[name]
+            print(
+                f"{name:<15}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}{r['peak_memory_mb']:>12.2f}"
+            )
+
+        conversion_table = pd.DataFrame(
+            [
+                {
+                    "Conversion": name,
+                    "Avg(s)": conversion_results[name]["avg_s"],
+                    "Min(s)": conversion_results[name]["min_s"],
+                    "Max(s)": conversion_results[name]["max_s"],
+                    "Peak_Memory_MB": conversion_results[name]["peak_memory_mb"],
+                }
+                for name in sorted(conversion_results.keys())
+            ]
         )
-    
-    conversion_table = pd.DataFrame(
-        [
-            {
-                "Conversion": name,
-                "Avg(s)": conversion_results[name]["avg_s"],
-                "Min(s)": conversion_results[name]["min_s"],
-                "Max(s)": conversion_results[name]["max_s"],
-                "Peak_Memory_MB": conversion_results[name]["peak_memory_mb"],
-            }
-            for name in sorted(conversion_results.keys())
-        ]
-    )
-    
-    conversion_output_path = f"{outdir}/symmetric_matrix_conversion_benchmark.csv"
-    conversion_table.to_csv(conversion_output_path, index=False)
-    print(f"\nSaved conversion table to {conversion_output_path}")
-    print(conversion_table.to_string(index=False))
-    print("-" * 98)
+
+        conversion_output_path = f"{outdir}/symmetric_matrix_conversion_benchmark.csv"
+        conversion_table.to_csv(conversion_output_path, index=False)
+        print(f"\nSaved conversion table to {conversion_output_path}")
+        print(conversion_table.to_string(index=False))
+        print("-" * 150)
 
 
 def benchmark_scaling(
@@ -351,7 +394,7 @@ def benchmark_scaling(
     print(f"NNZ ratios (nnz/n): {nnz_ratio_sizes}")
     print(f"Repeats per size: {repeats}")
     print("-" * 140)
-    print(f"{'N':<8}{'NNZ_Ratio':<12}{'Upper_NNZ':<12}{'Entry_Gen(s)':>13}{'COO_Avg(s)':>15}{'LIL_Avg(s)':>15}{'COO_Mem(MB)':>12}{'LIL_Mem(MB)':>12}")
+    print(f"{'N':<8}{'NNZ_Ratio':<12}{'NNZ':<12}{'Entry_Gen(s)':>13}{'COO_Avg(s)':>15}{'LIL_Avg(s)':>15}{'COO_Mem(MB)':>12}{'LIL_Mem(MB)':>12}")
     print("-" * 140)
     
     for n in sizes:
@@ -387,7 +430,7 @@ def benchmark_scaling(
             all_results.append({
                 "N": n,
                 "NNZ_Ratio": nnz_ratio,
-                "Upper_NNZ": upper_nnz,
+                "NNZ": upper_nnz,
                 "Entry_Gen_Time_s": gen_time,
                 "COO_Avg_s": coo_result["avg_s"],
                 "LIL_Avg_s": lil_result["avg_s"],
@@ -480,16 +523,23 @@ def main() -> None:
         type=str,
         default="single",
         choices=["single", "scaling"],
-        help="Benchmark mode: 'single' for a single matrix size, 'scaling' for multiple sizes.",
+        help="Benchmark mode: 'single' for one or more matrix sizes and ratios, 'scaling' for multiple sizes with one or more ratios.",
     )
     
     # Arguments for single-N benchmark
-    parser.add_argument("--n", type=int, default=2000, help="Matrix dimension (used in 'single' mode).")
+    parser.add_argument(
+        "--n",
+        type=int,
+        nargs='+',
+        default=[2000],
+        help="Matrix dimensions to benchmark (used in 'single' mode). Can specify multiple: --n 1000 2000 5000",
+    )
     parser.add_argument(
         "--upper-nnz",
         type=int,
-        default=20000,
-        help="Number of generated upper-triangle entries (with duplicates).",
+        nargs='+',
+        default=None,
+        help="Optional explicit upper-triangle entry counts for 'single' mode. Can specify multiple: --upper-nnz 5000 10000",
     )
     parser.add_argument("--repeats", type=int, default=3, help="Benchmark repetitions.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
@@ -506,8 +556,8 @@ def main() -> None:
         "--nnz-ratio",
         type=float,
         nargs='+',
-        default=[5.0],
-        help="List of NNZ ratios (nnz/n) to benchmark (used in 'scaling' mode). Can specify multiple: --nnz-ratio 4.0 8.0 16.0",
+        default=[10.0],
+        help="List of upper-triangle NNZ ratios (upper_nnz/n). Used in 'single' mode unless --upper-nnz is provided, and in 'scaling' mode. Can specify multiple: --nnz-ratio 4.0 8.0 16.0",
     )
     parser.add_argument(
         "--outdir",
@@ -518,7 +568,14 @@ def main() -> None:
     args = parser.parse_args()
     
     if args.mode == "single":
-        benchmark_single_n(args.n, args.upper_nnz, args.repeats, args.seed, args.outdir)
+        benchmark_single_n(
+            args.n,
+            args.nnz_ratio,
+            args.repeats,
+            args.seed,
+            args.outdir,
+            upper_nnz_values=args.upper_nnz,
+        )
     elif args.mode == "scaling":
         benchmark_scaling(args.matrix_sizes, args.nnz_ratio, args.repeats, args.seed, args.outdir)
 

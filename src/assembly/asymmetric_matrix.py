@@ -24,7 +24,7 @@ python asymmetric_matrix.py --mode single --n 1000 2000 5000 --nnz-ratio 1.0 --r
 python asymmetric_matrix.py --mode single --n 1000 10000 --nnz-ratio 4.0 8.0 16.0 --repeats 3 --outdir results
 
 # Scaling with custom sizes and multiple ratios
-python asymmetric_matrix.py --mode scaling --matrix-sizes 1000 10000 100000 --nnz-ratio-scaling 4.0 8.0 --repeats 2 --outdir results
+python asymmetric_matrix.py --mode scaling --matrix-sizes 1000 10000 100000 --nnz-ratio-scaling 4.0 8.0 --repeats 3 --outdir results
 '''
 
 from scipy.sparse import (

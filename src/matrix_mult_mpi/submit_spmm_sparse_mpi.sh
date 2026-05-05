@@ -22,6 +22,10 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
+MPI_LAUNCHER="${MPI_LAUNCHER:-srun}"
+
 echo "=========================================="
 echo "SPMM SPARSE-B MPI BENCHMARK - Job Started"
 echo "=========================================="
@@ -30,10 +34,15 @@ echo "Job Name:        $SLURM_JOB_NAME"
 echo "Hostname:        $(hostname)"
 echo "Num Tasks:       $SLURM_NTASKS"
 echo "CPUs per Task:   $SLURM_CPUS_PER_TASK"
+echo "Working Dir:     $SCRIPT_DIR"
+echo "Python:          $PYTHON_BIN"
+echo "MPI Launcher:    $MPI_LAUNCHER"
 echo "Memory:          $SLURM_MEM_PER_NODE"
 echo "Time Limit:      $SLURM_TIME_LIMIT"
 echo "Start Time:      $(date)"
 echo "=========================================="
+
+cd "$SCRIPT_DIR"
 
 mkdir -p logs
 mkdir -p results_hpc_spmm_mpi
@@ -62,12 +71,12 @@ echo "Starting Sparse-B SpMM MPI Benchmark"
 echo "=========================================="
 echo ""
 
-python benchmark_spmm_sparse_mpi.py \
+"$PYTHON_BIN" "$SCRIPT_DIR/benchmark_spmm_sparse_mpi.py" \
     --processes 1 2 4 8 16 \
     --b-cols 4 8 16 \
     --sparsity 0.10 \
     --repeats 3 \
-    --mpi-launcher srun \
+    --mpi-launcher "$MPI_LAUNCHER" \
     --outdir results_hpc_spmm_mpi
 
 echo ""

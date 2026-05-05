@@ -11,6 +11,7 @@ Tests cover:
 import sys
 import os
 import numpy as np
+import pandas as pd
 import pytest
 from scipy.sparse import coo_matrix, csr_matrix, csc_matrix, lil_matrix
 
@@ -33,6 +34,8 @@ from symmetric_matrix import (
     assemble_csr as sym_csr,
     assemble_csc as sym_csc,
     matrices_equal as sym_matrices_equal,
+    benchmark_single_n as sym_benchmark_single_n,
+    benchmark_scaling as sym_benchmark_scaling,
 )
 
 from asymmetric_matrix import (
@@ -537,6 +540,61 @@ class TestEdgeCases:
         # (0,0) should sum to 3.0
         assert mat[0, 0] == pytest.approx(3.0)
         assert mat[1, 1] == pytest.approx(3.0)
+
+
+class TestSymmetricBenchmarkOutputs:
+    """Validate symmetric benchmark CSV output shapes."""
+
+    def test_symmetric_single_output_matches_asymmetric_shape(self, tmp_path):
+        """Single mode should emit one row per format for each N/ratio pair."""
+        sym_benchmark_single_n(
+            n_values=[4, 6],
+            nnz_ratios=[1.0, 2.0],
+            repeats=1,
+            seed=0,
+            outdir=str(tmp_path),
+        )
+
+        table = pd.read_csv(tmp_path / "symmetric_matrix_benchmark.csv")
+
+        assert len(table) == 2 * 2 * 4
+        assert list(table.columns) == [
+            "N",
+            "NNZ",
+            "NNZ_Ratio",
+            "Format",
+            "Avg(s)",
+            "Min(s)",
+            "Max(s)",
+            "NNZ_Result",
+            "Peak_Memory_MB",
+            "EqualToCOO",
+        ]
+        assert set(table["Format"]) == {"COO", "LIL", "CSR", "CSC"}
+
+    def test_symmetric_scaling_output_matches_asymmetric_shape(self, tmp_path):
+        """Scaling mode should emit the same CSV columns as asymmetric scaling."""
+        sym_benchmark_scaling(
+            matrix_sizes=[4, 6],
+            nnz_ratio_sizes=[1.0, 2.0],
+            repeats=1,
+            seed=0,
+            outdir=str(tmp_path),
+        )
+
+        table = pd.read_csv(tmp_path / "symmetric_matrix_scaling.csv")
+
+        assert len(table) == 2 * 2
+        assert list(table.columns) == [
+            "N",
+            "NNZ_Ratio",
+            "NNZ",
+            "Entry_Gen_Time_s",
+            "COO_Avg_s",
+            "LIL_Avg_s",
+            "COO_Peak_Memory_MB",
+            "LIL_Peak_Memory_MB",
+        ]
 
 
 # ============================================================================

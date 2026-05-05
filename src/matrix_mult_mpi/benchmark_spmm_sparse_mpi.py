@@ -48,6 +48,67 @@ HPC_DEFAULT_MATRICES = [
 ]
 
 
+def build_worker_launch_cmd(
+    args: argparse.Namespace,
+    num_procs: int,
+    worker_csv: Path,
+) -> list[str]:
+    """Build one MPI worker launch command for a given process count."""
+    launcher_name = os.path.basename(args.mpi_launcher)
+    python_executable = str(Path(sys.executable).resolve())
+    script_path = str(Path(__file__).resolve())
+
+    cmd = [args.mpi_launcher]
+    if launcher_name == "srun":
+        # Nested srun job steps are more reliable when they explicitly overlap the
+        # launcher step and inherit the current environment.
+        cmd.extend(["--overlap", "--export=ALL", "--ntasks", str(num_procs)])
+    else:
+        cmd.extend(["-np", str(num_procs)])
+
+    cmd.extend(
+        [
+            python_executable,
+            script_path,
+            "--mode",
+            "worker",
+            "--output",
+            str(worker_csv),
+            "--outdir",
+            args.outdir,
+            "--cache-dir",
+            args.cache_dir,
+            "--repeats",
+            str(args.repeats),
+        ]
+    )
+    if args.validate:
+        cmd.append("--validate")
+    if args.matrices:
+        cmd.append("--matrices")
+        cmd.extend(args.matrices)
+    if args.b_cols:
+        cmd.append("--b-cols")
+        cmd.extend(str(v) for v in args.b_cols)
+    if args.sparsity:
+        cmd.append("--sparsity")
+        cmd.extend(str(v) for v in args.sparsity)
+    return cmd
+
+
+def validate_worker_launch_prereqs() -> None:
+    """Fail early with a clearer message if the worker executable path is unusable."""
+    python_path = Path(sys.executable).resolve()
+    script_path = Path(__file__).resolve()
+
+    if not python_path.exists():
+        raise FileNotFoundError(f"Python executable not found: {python_path}")
+    if not os.access(python_path, os.X_OK):
+        raise PermissionError(f"Python executable is not runnable: {python_path}")
+    if not script_path.exists():
+        raise FileNotFoundError(f"Worker script not found: {script_path}")
+
+
 def benchmark_worker(
     cache_dir: str,
     matrix_names: list[str],
@@ -175,6 +236,7 @@ def benchmark_worker(
 
 def launch_worker_runs(args: argparse.Namespace) -> pd.DataFrame:
     """Launcher mode: mirror the OpenMP benchmark by looping over process counts."""
+    validate_worker_launch_prereqs()
     os.makedirs(args.outdir, exist_ok=True)
     worker_dir = Path(args.outdir) / "_mpi_worker_runs"
     worker_dir.mkdir(exist_ok=True)
@@ -191,42 +253,10 @@ def launch_worker_runs(args: argparse.Namespace) -> pd.DataFrame:
     print("=" * 90)
 
     worker_csvs: list[Path] = []
-    launcher_name = os.path.basename(args.mpi_launcher)
 
     for num_procs in args.processes:
         worker_csv = worker_dir / f"worker_np{num_procs}.csv"
-        cmd = [args.mpi_launcher]
-        if launcher_name == "srun":
-            cmd.extend(["-n", str(num_procs)])
-        else:
-            cmd.extend(["-np", str(num_procs)])
-        cmd.extend(
-            [
-                sys.executable,
-                os.path.abspath(__file__),
-                "--mode",
-                "worker",
-                "--output",
-                str(worker_csv),
-                "--outdir",
-                args.outdir,
-                "--cache-dir",
-                args.cache_dir,
-                "--repeats",
-                str(args.repeats),
-            ]
-        )
-        if args.validate:
-            cmd.append("--validate")
-        if args.matrices:
-            cmd.append("--matrices")
-            cmd.extend(args.matrices)
-        if args.b_cols:
-            cmd.append("--b-cols")
-            cmd.extend(str(v) for v in args.b_cols)
-        if args.sparsity:
-            cmd.append("--sparsity")
-            cmd.extend(str(v) for v in args.sparsity)
+        cmd = build_worker_launch_cmd(args, num_procs, worker_csv)
 
         print(f"\nLaunching MPI run with {num_procs} processes...")
         print("Command:", " ".join(cmd))
