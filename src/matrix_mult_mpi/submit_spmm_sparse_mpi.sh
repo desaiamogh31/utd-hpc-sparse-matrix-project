@@ -23,7 +23,6 @@
 set -euo pipefail
 
 MPI_CXX="mpicxx"
-MPI_LAUNCHER="${MPI_LAUNCHER:-mpirun}"
 EXECUTABLE="spmm_sparse_mpi"
 SOURCE_FILE="spmm_sparse_mpi.cpp"
 RESULTS_DIR="results_hpc_spmm_mpi"
@@ -35,6 +34,10 @@ JOB_ERR="${RESULTS_DIR}/job_${SLURM_JOB_ID:-manual}.err"
 
 mkdir -p "$RESULTS_DIR"
 exec > >(tee -a "$JOB_LOG") 2> >(tee -a "$JOB_ERR" >&2)
+
+MPI_CXX_PATH="$(command -v "$MPI_CXX")"
+MPI_BIN_DIR="$(dirname "$MPI_CXX_PATH")"
+MPI_LAUNCHER="${MPI_LAUNCHER:-$MPI_BIN_DIR/mpirun}"
 
 echo "=========================================="
 echo "SPMM SPARSE-B MPI BENCHMARK - Job Started"
@@ -56,7 +59,7 @@ rm -f "$OUTPUT_CSV"
 
 echo ""
 echo "Compiling ${SOURCE_FILE}..."
-command -v "$MPI_CXX"
+echo "$MPI_CXX_PATH"
 "$MPI_CXX" --version || true
 command -v "$MPI_LAUNCHER"
 "$MPI_LAUNCHER" --version || true
