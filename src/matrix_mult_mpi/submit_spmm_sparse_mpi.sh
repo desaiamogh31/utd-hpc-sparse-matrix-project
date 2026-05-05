@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=spmm_sparse_mpi
-#SBATCH --output=logs/spmm_sparse_mpi_%j.log
-#SBATCH --error=logs/spmm_sparse_mpi_%j.err
+#SBATCH --output=spmm_sparse_mpi_%j.log
+#SBATCH --error=spmm_sparse_mpi_%j.err
 #SBATCH --partition=cmt
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
@@ -23,8 +23,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python || command -v python3 || true)}"
 MPI_LAUNCHER="${MPI_LAUNCHER:-srun}"
+RUN_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+RESULTS_DIR="${RUN_DIR}/results_hpc_spmm_mpi"
 
 echo "=========================================="
 echo "SPMM SPARSE-B MPI BENCHMARK - Job Started"
@@ -34,7 +36,8 @@ echo "Job Name:        $SLURM_JOB_NAME"
 echo "Hostname:        $(hostname)"
 echo "Num Tasks:       $SLURM_NTASKS"
 echo "CPUs per Task:   $SLURM_CPUS_PER_TASK"
-echo "Working Dir:     $SCRIPT_DIR"
+echo "Code Dir:        $SCRIPT_DIR"
+echo "Run Dir:         $RUN_DIR"
 echo "Python:          $PYTHON_BIN"
 echo "MPI Launcher:    $MPI_LAUNCHER"
 echo "Memory:          $SLURM_MEM_PER_NODE"
@@ -42,10 +45,31 @@ echo "Time Limit:      $SLURM_TIME_LIMIT"
 echo "Start Time:      $(date)"
 echo "=========================================="
 
-cd "$SCRIPT_DIR"
+if [ ! -d "$RUN_DIR" ]; then
+    echo "ERROR: Run directory does not exist: $RUN_DIR"
+    exit 1
+fi
 
-mkdir -p logs
-mkdir -p results_hpc_spmm_mpi
+if [ ! -w "$RUN_DIR" ]; then
+    echo "ERROR: Run directory is not writable: $RUN_DIR"
+    exit 1
+fi
+
+cd "$RUN_DIR"
+
+mkdir -p "$RESULTS_DIR"
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo "ERROR: No python interpreter found in PATH."
+    echo "Set PYTHON_BIN explicitly, for example:"
+    echo "  sbatch --export=PYTHON_BIN=/home/\$USER/miniforge3/envs/hpc-s26/bin/python submit_spmm_sparse_mpi.sh"
+    exit 1
+fi
+
+if [ ! -x "$PYTHON_BIN" ]; then
+    echo "ERROR: Python interpreter is not executable: $PYTHON_BIN"
+    exit 1
+fi
 
 echo ""
 echo "System Information:"
@@ -62,7 +86,7 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
-export MPLCONFIGDIR="${PWD}/.matplotlib"
+export MPLCONFIGDIR="${RUN_DIR}/.matplotlib"
 mkdir -p "$MPLCONFIGDIR"
 
 echo ""
@@ -77,12 +101,13 @@ echo ""
     --sparsity 0.10 \
     --repeats 3 \
     --mpi-launcher "$MPI_LAUNCHER" \
-    --outdir results_hpc_spmm_mpi
+    --cache-dir "$RUN_DIR/../matrix_matrix_mult/matrices/" \
+    --outdir "$RESULTS_DIR"
 
 echo ""
 echo "=========================================="
 echo "Benchmark Complete"
 echo "=========================================="
-echo "Results saved to: results_hpc_spmm_mpi/"
+echo "Results saved to: $RESULTS_DIR/"
 echo "End Time: $(date)"
 echo "=========================================="
