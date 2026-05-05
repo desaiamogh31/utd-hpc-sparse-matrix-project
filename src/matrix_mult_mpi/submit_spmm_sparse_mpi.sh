@@ -20,15 +20,21 @@
 #   3. write one combined CSV in the current directory
 ################################################################################
 
-set -e
+set -euo pipefail
 
-MPI_CXX="${MPI_CXX:-mpicxx}"
+MPI_CXX="mpicxx"
+MPI_LAUNCHER="${MPI_LAUNCHER:-mpirun}"
 EXECUTABLE="spmm_sparse_mpi"
 SOURCE_FILE="spmm_sparse_mpi.cpp"
 RESULTS_DIR="results_hpc_spmm_mpi"
 OUTPUT_CSV="${RESULTS_DIR}/benchmark_spmm_sparse_mpi.csv"
 PROCESS_VALUES=(1 2 4 8 16)
 MAX_PROCS="${SLURM_NTASKS:-16}"
+JOB_LOG="${RESULTS_DIR}/job_${SLURM_JOB_ID:-manual}.log"
+JOB_ERR="${RESULTS_DIR}/job_${SLURM_JOB_ID:-manual}.err"
+
+mkdir -p "$RESULTS_DIR"
+exec > >(tee -a "$JOB_LOG") 2> >(tee -a "$JOB_ERR" >&2)
 
 echo "=========================================="
 echo "SPMM SPARSE-B MPI BENCHMARK - Job Started"
@@ -39,17 +45,24 @@ echo "Hostname:        $(hostname)"
 echo "Num Tasks:       $SLURM_NTASKS"
 echo "CPUs per Task:   $SLURM_CPUS_PER_TASK"
 echo "Compiler:        $MPI_CXX"
+echo "MPI Launcher:    $MPI_LAUNCHER"
 echo "Working Dir:     $(pwd)"
 echo "Start Time:      $(date)"
+echo "Job Log:         $JOB_LOG"
+echo "Job Err:         $JOB_ERR"
 echo "=========================================="
 
-mkdir -p "$RESULTS_DIR"
 rm -f "$OUTPUT_CSV"
 
 echo ""
 echo "Compiling ${SOURCE_FILE}..."
-"$MPI_CXX" -O3 -std=c++17 -o "$EXECUTABLE" "$SOURCE_FILE"
+command -v "$MPI_CXX"
+"$MPI_CXX" --version || true
+command -v "$MPI_LAUNCHER"
+"$MPI_LAUNCHER" --version || true
+"$MPI_CXX" -O3 -std=c++17 -o "$EXECUTABLE" "$SOURCE_FILE" -lm
 echo "Compilation complete"
+ls -lh "$EXECUTABLE"
 
 export OMP_NUM_THREADS=1
 
@@ -66,14 +79,33 @@ for procs in "${PROCESS_VALUES[@]}"; do
     fi
 
     echo "Running benchmark with ${procs} MPI process(es)..."
-    srun --ntasks="$procs" --cpus-per-task=1 "./$EXECUTABLE" \
-        --outdir "$RESULTS_DIR" \
-        --output "$(basename "$OUTPUT_CSV")" \
-        --cache-dir ../matrix_matrix_mult/matrices \
-        --repeats 3 \
-        --b-cols 4 8 16 \
-        --sparsity 0.10 \
-        --matrices 1138_bus abb313 delaunay_n15 bcsstk30 delaunay_n19 pkustk14
+    if [ "$MPI_LAUNCHER" = "srun" ]; then
+        srun \
+            --ntasks="$procs" \
+            --cpus-per-task=1 \
+            --kill-on-bad-exit=1 \
+            --output "${RESULTS_DIR}/srun_np${procs}_%t.log" \
+            --error "${RESULTS_DIR}/srun_np${procs}_%t.err" \
+            "./$EXECUTABLE" \
+            --outdir "$RESULTS_DIR" \
+            --output "$(basename "$OUTPUT_CSV")" \
+            --cache-dir ../matrix_matrix_mult/matrices \
+            --repeats 3 \
+            --b-cols 4 8 16 \
+            --sparsity 0.10 \
+            --matrices 1138_bus abb313 delaunay_n15 bcsstk30 delaunay_n19 pkustk14
+    else
+        "$MPI_LAUNCHER" -np "$procs" "./$EXECUTABLE" \
+            --outdir "$RESULTS_DIR" \
+            --output "$(basename "$OUTPUT_CSV")" \
+            --cache-dir ../matrix_matrix_mult/matrices \
+            --repeats 3 \
+            --b-cols 4 8 16 \
+            --sparsity 0.10 \
+            --matrices 1138_bus abb313 delaunay_n15 bcsstk30 delaunay_n19 pkustk14 \
+            > "${RESULTS_DIR}/mpirun_np${procs}.log" \
+            2> "${RESULTS_DIR}/mpirun_np${procs}.err"
+    fi
     echo ""
 done
 
