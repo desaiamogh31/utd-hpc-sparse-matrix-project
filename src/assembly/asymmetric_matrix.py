@@ -15,10 +15,16 @@ This script provides two modes:
 """
 ''' SAMPLE USAGE:
 # Single matrix benchmark
-python asymmetric_matrix.py --mode single --n 2000 --nnz 10000 --repeats 3 --outdir results
+python asymmetric_matrix.py --mode single --n 2000 --nnz-ratio 1.0 --repeats 3 --outdir results
 
-# Scaling with custom sizes and ratio
-python asymmetric_matrix.py --mode scaling --matrix-sizes 1000 10000 100000 1000000 --nnz-ratio 8.0 --repeats 2 --outdir results
+# Multiple matrix sizes with single ratio
+python asymmetric_matrix.py --mode single --n 1000 2000 5000 --nnz-ratio 1.0 --repeats 3 --outdir results
+
+# Multiple matrix sizes with multiple ratios
+python asymmetric_matrix.py --mode single --n 1000 10000 --nnz-ratio 4.0 8.0 16.0 --repeats 3 --outdir results
+
+# Scaling with custom sizes and multiple ratios
+python asymmetric_matrix.py --mode scaling --matrix-sizes 1000 10000 100000 --nnz-ratio-scaling 4.0 8.0 --repeats 2 --outdir results
 '''
 
 from scipy.sparse import (
@@ -196,117 +202,133 @@ def benchmark_conversions(
 
 
 def benchmark_single_n(
-    n: int, nnz: int, repeats: int, seed: int, outdir: str = "."
+    n_values: List[int], nnz_ratios: List[float], repeats: int, seed: int, outdir: str = "."
 ) -> None:
     """
-    Benchmark assembly of a single asymmetric matrix with given parameters.
-    Produces a table with runtimes for COO, CSR, LIL, and CSC formats.
+    Benchmark assembly of asymmetric matrices with given parameters.
+    Produces a table with runtimes for COO, CSR, LIL, and CSC formats across multiple N values and nnz ratios.
     
     Parameters:
-    - n: Matrix dimension.
-    - nnz: Number of entries to generate.
+    - n_values: List of matrix dimensions to benchmark.
+    - nnz_ratios: List of nnz ratios (nnz = int(n * nnz_ratio) for each n).
     - repeats: Number of benchmark repetitions.
     - seed: Random seed for reproducibility.
     - outdir: Output directory for results.
     """
-    if nnz > (n * n):
-        raise ValueError(
-            f"nnz {nnz} exceeds total entries {n * n} for n={n}"
-        )
+    all_results = []
     
-    start_time = time.perf_counter()
-    i, j, v = generate_random_entries(n, nnz, seed)
-    end_time = time.perf_counter()
-    time_taken_for_generation = end_time - start_time
-    print(f"Generated {nnz} random entries for n={n} in {time_taken_for_generation:.6f} seconds.")
-    builders = {
-        "COO": assemble_coo,
-        "LIL": assemble_lil,
-        "CSR": assemble_csr,
-        "CSC": assemble_csc,
-    }
-
-    results = {}
-    for name, fn in builders.items():
-        results[name] = benchmark(fn, n, i, j, v, repeats)
-
-    # Correctness: compare all against COO result.
-    ref = results["COO"]["matrix"]
-    print(f"\nAsymmetric assembly benchmark (n={n}, nnz={nnz})")
-    print("-" * 98)
-    print(f"{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}")
-    print("-" * 98)
-    for name in ["COO", "LIL", "CSR", "CSC"]:
-        r = results[name]
-        ok = matrices_equal(r["matrix"], ref)
-        print(
-            f"{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
-            f"{r['nnz']:>12d}{r['peak_memory_mb']:>12.2f}{str(ok):>18}"
-        )
-    table = pd.DataFrame(
-        [
-            {
-                "Format": name,
-                "Avg(s)": results[name]["avg_s"],
-                "Min(s)": results[name]["min_s"],
-                "Max(s)": results[name]["max_s"],
-                "NNZ": results[name]["nnz"],
-                "Peak_Memory_MB": results[name]["peak_memory_mb"],
-                "EqualToCOO": matrices_equal(results[name]["matrix"], ref),
+    print(f"\nAsymmetric assembly benchmark (nnz_ratios={nnz_ratios}, repeats={repeats})")
+    print("-" * 150)
+    print(f"{'N':<8}{'NNZ':<12}{'Ratio':<8}{'Format':<8}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'NNZ_Result':>12}{'Memory(MB)':>12}{'EqualToCOO':>18}")
+    print("-" * 150)
+    
+    for n in n_values:
+        for nnz_ratio in nnz_ratios:
+            nnz = int(n * nnz_ratio)
+            
+            if nnz > (n * n):
+                raise ValueError(
+                    f"nnz {nnz} exceeds total entries {n * n} for n={n} (nnz_ratio={nnz_ratio})"
+                )
+            
+            i, j, v = generate_random_entries(n, nnz, seed)
+            builders = {
+                "COO": assemble_coo,
+                "LIL": assemble_lil,
+                "CSR": assemble_csr,
+                "CSC": assemble_csc,
             }
-            for name in ["COO", "LIL", "CSR", "CSC"]
-        ]
-    )
+
+            results = {}
+            for name, fn in builders.items():
+                results[name] = benchmark(fn, n, i, j, v, repeats)
+
+            # Correctness: compare all against COO result.
+            ref = results["COO"]["matrix"]
+            
+            for name in ["COO", "LIL", "CSR", "CSC"]:
+                r = results[name]
+                ok = matrices_equal(r["matrix"], ref)
+                print(
+                    f"{n:<8}{nnz:<12}{nnz_ratio:<8.1f}{name:<8}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}"
+                    f"{r['nnz']:>12d}{r['peak_memory_mb']:>12.2f}{str(ok):>18}"
+                )
+                
+                all_results.append({
+                    "N": n,
+                    "NNZ": nnz,
+                    "NNZ_Ratio": nnz_ratio,
+                    "Format": name,
+                    "Avg(s)": r["avg_s"],
+                    "Min(s)": r["min_s"],
+                    "Max(s)": r["max_s"],
+                    "NNZ_Result": r["nnz"],
+                    "Peak_Memory_MB": r["peak_memory_mb"],
+                    "EqualToCOO": ok,
+                })
+
+    table = pd.DataFrame(all_results)
 
     # Ensure output directory exists
     os.makedirs(outdir, exist_ok=True)
     
     output_path = f"{outdir}/asymmetric_matrix_benchmark.csv"
     table.to_csv(output_path, index=False)
-    print(f"Saved table to {output_path}")
+    print(f"\nSaved table to {output_path}")
     print(table.to_string(index=False))
-    print("-" * 98)
+    print("-" * 150)
     print("Note: Direct incremental assembly is usually fastest in LIL/COO,")
     print("while direct CSR/CSC insertion is typically much slower.")
     
-    # Benchmark conversions from COO/LIL to CSR/CSC
-    print("\n" + "=" * 98)
-    print("Format Conversion Benchmarks")
-    print("=" * 98)
-    
-    source_matrices = {
-        "COO": results["COO"]["matrix"],
-        "LIL": results["LIL"]["matrix"],
-    }
-    
-    conversion_results = benchmark_conversions(source_matrices, repeats)
-    
-    print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}")
-    print("-" * 63)
-    for name in sorted(conversion_results.keys()):
-        r = conversion_results[name]
-        print(
-            f"{name:<15}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}{r['peak_memory_mb']:>12.2f}"
+    # Benchmark conversions from COO/LIL to CSR/CSC for the first N value and first ratio
+    if n_values and nnz_ratios:
+        print("\n" + "=" * 150)
+        print(f"Format Conversion Benchmarks (N={n_values[0]}, nnz_ratio={nnz_ratios[0]})")
+        print("=" * 150)
+        
+        # Re-generate entries for first N and first ratio to benchmark conversions
+        n = n_values[0]
+        nnz_ratio = nnz_ratios[0]
+        nnz = int(n * nnz_ratio)
+        i, j, v = generate_random_entries(n, nnz, seed)
+        
+        builders = {
+            "COO": assemble_coo,
+            "LIL": assemble_lil,
+        }
+        
+        source_matrices = {}
+        for name, fn in builders.items():
+            source_matrices[name] = benchmark(fn, n, i, j, v, repeats)["matrix"]
+        
+        conversion_results = benchmark_conversions(source_matrices, repeats)
+        
+        print(f"\n{'Conversion':<15}{'Avg(s)':>12}{'Min(s)':>12}{'Max(s)':>12}{'Memory(MB)':>12}")
+        print("-" * 63)
+        for name in sorted(conversion_results.keys()):
+            r = conversion_results[name]
+            print(
+                f"{name:<15}{r['avg_s']:>12.6f}{r['min_s']:>12.6f}{r['max_s']:>12.6f}{r['peak_memory_mb']:>12.2f}"
+            )
+        
+        conversion_table = pd.DataFrame(
+            [
+                {
+                    "Conversion": name,
+                    "Avg(s)": conversion_results[name]["avg_s"],
+                    "Min(s)": conversion_results[name]["min_s"],
+                    "Max(s)": conversion_results[name]["max_s"],
+                    "Peak_Memory_MB": conversion_results[name]["peak_memory_mb"],
+                }
+                for name in sorted(conversion_results.keys())
+            ]
         )
-    
-    conversion_table = pd.DataFrame(
-        [
-            {
-                "Conversion": name,
-                "Avg(s)": conversion_results[name]["avg_s"],
-                "Min(s)": conversion_results[name]["min_s"],
-                "Max(s)": conversion_results[name]["max_s"],
-                "Peak_Memory_MB": conversion_results[name]["peak_memory_mb"],
-            }
-            for name in sorted(conversion_results.keys())
-        ]
-    )
-    
-    conversion_output_path = f"{outdir}/asymmetric_matrix_conversion_benchmark.csv"
-    conversion_table.to_csv(conversion_output_path, index=False)
-    print(f"\nSaved conversion table to {conversion_output_path}")
-    print(conversion_table.to_string(index=False))
-    print("-" * 98)
+        
+        conversion_output_path = f"{outdir}/asymmetric_matrix_conversion_benchmark.csv"
+        conversion_table.to_csv(conversion_output_path, index=False)
+        print(f"\nSaved conversion table to {conversion_output_path}")
+        print(conversion_table.to_string(index=False))
+        print("-" * 150)
 
 
 def benchmark_scaling(
@@ -458,16 +480,23 @@ def main() -> None:
         type=str,
         default="single",
         choices=["single", "scaling"],
-        help="Benchmark mode: 'single' for a single matrix size, 'scaling' for multiple sizes.",
+        help="Benchmark mode: 'single' for one or more matrix sizes, 'scaling' for multiple sizes with multiple ratios.",
     )
     
     # Arguments for single-N benchmark
-    parser.add_argument("--n", type=int, default=2000, help="Matrix dimension (used in 'single' mode).")
     parser.add_argument(
-        "--nnz",
+        "--n",
         type=int,
-        default=20000,
-        help="Number of entries to generate.",
+        nargs='+',
+        default=[2000],
+        help="Matrix dimensions to benchmark (used in 'single' mode). Can specify multiple: --n 1000 2000 5000"
+    )
+    parser.add_argument(
+        "--nnz-ratio",
+        type=float,
+        nargs='+',
+        default=[1.0],
+        help="Ratios of nnz to n (used in 'single' mode). Can specify multiple: --nnz-ratio 1.0 4.0 8.0",
     )
     parser.add_argument("--repeats", type=int, default=3, help="Benchmark repetitions.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
@@ -481,24 +510,24 @@ def main() -> None:
         help="List of matrix dimensions to benchmark (used in 'scaling' mode).",
     )
     parser.add_argument(
-        "--nnz-ratio",
+        "--nnz-ratio-scaling",
         type=float,
         nargs='+',
         default=[5.0],
-        help="List of NNZ ratios (nnz/n) to benchmark (used in 'scaling' mode). Can specify multiple: --nnz-ratio 4.0 8.0 16.0",
+        help="List of NNZ ratios (nnz/n) to benchmark (used in 'scaling' mode). Can specify multiple: --nnz-ratio-scaling 4.0 8.0 16.0",
     )
     parser.add_argument(
         "--outdir",
         type=str,
         default=".",
-        help="Output directory for plots and CSV files (used in 'scaling' mode).",
+        help="Output directory for plots and CSV files.",
     )
     args = parser.parse_args()
     
     if args.mode == "single":
-        benchmark_single_n(args.n, args.nnz, args.repeats, args.seed, args.outdir)
+        benchmark_single_n(args.n, args.nnz_ratio, args.repeats, args.seed, args.outdir)
     elif args.mode == "scaling":
-        benchmark_scaling(args.matrix_sizes, args.nnz_ratio, args.repeats, args.seed, args.outdir)
+        benchmark_scaling(args.matrix_sizes, args.nnz_ratio_scaling, args.repeats, args.seed, args.outdir)
 
 if __name__ == "__main__":
     main()

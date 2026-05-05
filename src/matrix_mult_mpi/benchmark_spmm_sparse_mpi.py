@@ -191,26 +191,31 @@ def launch_worker_runs(args: argparse.Namespace) -> pd.DataFrame:
     print("=" * 90)
 
     worker_csvs: list[Path] = []
+    launcher_name = os.path.basename(args.mpi_launcher)
 
     for num_procs in args.processes:
         worker_csv = worker_dir / f"worker_np{num_procs}.csv"
-        cmd = [
-            args.mpi_launcher,
-            "-np",
-            str(num_procs),
-            sys.executable,
-            os.path.abspath(__file__),
-            "--mode",
-            "worker",
-            "--output",
-            str(worker_csv),
-            "--outdir",
-            args.outdir,
-            "--cache-dir",
-            args.cache_dir,
-            "--repeats",
-            str(args.repeats),
-        ]
+        cmd = [args.mpi_launcher]
+        if launcher_name == "srun":
+            cmd.extend(["-n", str(num_procs)])
+        else:
+            cmd.extend(["-np", str(num_procs)])
+        cmd.extend(
+            [
+                sys.executable,
+                os.path.abspath(__file__),
+                "--mode",
+                "worker",
+                "--output",
+                str(worker_csv),
+                "--outdir",
+                args.outdir,
+                "--cache-dir",
+                args.cache_dir,
+                "--repeats",
+                str(args.repeats),
+            ]
+        )
         if args.validate:
             cmd.append("--validate")
         if args.matrices:

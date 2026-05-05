@@ -45,8 +45,9 @@ echo "CPU Count: $(nproc)"
 echo "Memory: $(free -h | head -2 || true)"
 echo ""
 
-module load gcc || true
-module load openmpi || true
+# Load cluster modules only if your site requires them.
+# module load gcc
+# module load openmpi
 
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -66,6 +67,7 @@ python benchmark_spmm_sparse_mpi.py \
     --b-cols 4 8 16 \
     --sparsity 0.10 \
     --repeats 3 \
+    --mpi-launcher srun \
     --outdir results_hpc_spmm_mpi
 
 echo ""
