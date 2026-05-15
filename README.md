@@ -7,15 +7,13 @@ A high-performance computing (HPC) course project at the **University of Texas a
 ## Table of Contents
 
 - [Overview](#overview)
+- [Project Status](#project-status)
 - [Storage Formats](#storage-formats)
-- [Features](#features)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Build](#build)
   - [Run](#run)
-- [Benchmarks](#benchmarks)
-- [Parallelization](#parallelization)
 - [References](#references)
 - [License](#license)
 
@@ -25,21 +23,24 @@ A high-performance computing (HPC) course project at the **University of Texas a
 
 Sparse matrices arise naturally in scientific computing whenever most entries of a matrix are zero — common examples include discretized partial differential equations (PDEs), graph Laplacians, and finite-element stiffness matrices. Efficient storage and computation on these matrices is critical for HPC applications.
 
-This project:
+This project implements:
 
-1. Implements several widely-used sparse matrix storage formats from scratch.
-2. Assembles global sparse matrices from local element matrices (finite-element assembly).
-3. Benchmarks **SpMV** (sparse matrix–vector multiplication) and **SpMM** (sparse matrix–matrix multiplication) across formats.
-4. Explores parallel implementations using **OpenMP** and/or **MPI**.
+1. Multiple sparse matrix storage formats (COO, CSR, CSC, LIL) from scratch
+2. Finite-element assembly routines for creating global sparse matrices
+3. Sparse matrix–vector multiplication (SpMV) with serial and OpenMP implementations
+4. Sparse matrix–matrix multiplication (SpMM) with serial, OpenMP, and MPI implementations
+5. Comprehensive benchmarking across all formats and parallelization strategies
 
-### Project Status
+---
+
+## Project Status
 
 | Phase | Component | Status |
 |-------|-----------|--------|
-| **Phase 1** | Finite-element assembly (CSR, CSC, COO, LIL) | ✅ Complete |
-| **Phase 2** | SpMV: Serial Python + OpenMP (scaling: 1-8 threads) | ✅ Complete |
-| **Phase 3a** | SpMM: Serial Python (3 algorithms) + OpenMP | ✅ Complete |
-| **Phase 3b** | SpMM: MPI distributed memory | 🔄 In Progress |
+| **Phase 1** | Finite-element assembly (COO, CSR, CSC, LIL) | 
+| **Phase 2** | SpMV: Serial Python + OpenMP (1-8 threads) | 
+| **Phase 3a** | SpMM: Serial Python (3 algorithms) + OpenMP |
+| **Phase 3b** | SpMM: MPI distributed-memory framework |
 
 ---
 
@@ -48,57 +49,59 @@ This project:
 | Format | Full Name | Best Use Case |
 |--------|-----------|---------------|
 | **COO** | Coordinate (triplet) | Assembly, incremental construction |
-| **CSR** | Compressed Sparse Row | Row-wise access, SpMV |
-| **CSC** | Compressed Sparse Column | Column-wise access, sparse direct solvers |
-| **LIL** | List of Lists | Assembly, incremental construction
-
----
-
-## Features
-
-### Phase 1: Finite-Element Assembly ✅
-- **Multiple storage formats** — COO, CSR, CSC, LIL implementations
-- **Symmetric/asymmetric matrices** — supports various matrix types
-- **Laplacian assembly** — common test case (2D/3D FEM discretization)
-- **Format conversion** — routines to convert between all formats
-- **Assembly benchmarking** — timing and performance analysis across formats
-
-### Phase 2: Sparse Matrix–Vector Multiplication (SpMV) ✅
-- **Serial Python baseline** — reference implementation with validation
-- **OpenMP parallelization** — shared-memory scaling (1-8 threads)
-- **Real-world matrices** — benchmarked on SuiteSparse matrices (bus, bcsstk30, delaunay, etc.)
-- **Scaling analysis** — strong and weak scaling metrics
-- **Performance metrics** — GFlop/s, memory bandwidth, execution time tracking
-
-### Phase 3a: Sparse Matrix–Matrix Multiplication (SpMM) ✅
-- **Three algorithmic variants**:
-  - Row-wise: CSR-friendly row parallelization
-  - Outer-product: Column-accumulation with rank-1 updates
-  - Blocked inner-product: Cache-aware column blocking
-- **Serial Python baseline** — all three algorithms with sparse output (CSR)
-- **OpenMP scaling** — thread-level parallelism with dynamic scheduling
-- **Variable dense columns** — k=1,4,8,16,32,64,128,256,512 for memory-bound to compute-bound analysis
-- **Comprehensive benchmarking** — GFlop/s, sparsity metrics, memory usage tracking
-
-### General Features
-- **Correctness validation** — results are cross-checked against dense reference implementation
-- **Performance profiling** — wall-clock timings, GFlop/s, memory-bandwidth utilization reported
-- **Matrix market support** — load and process real sparse matrices from SuiteSparse collection
-- **CSV results export** — all benchmarks saved for analysis and visualization
+| **CSR** | Compressed Sparse Row | Row-wise access, SpMV, row-parallel SpMM |
+| **CSC** | Compressed Sparse Column | Column-wise access, outer-product SpMM |
+| **LIL** | List of Lists | Assembly, incremental construction |
 
 ---
 
 ## Project Structure
 
 ```
-utd-hpc-sparse-matrix-project/
-├── src/                  # Source files
-│   ├── formats/          # Storage format implementations (COO, CSR, CSC, ...)
-│   ├── assembly/         # Finite-element assembly routines
-│   ├── kernels/          # SpMV and SpMM kernels
-│   └── utils/            # I/O, timing, validation helpers
-├── tests/                # Unit and integration tests
-└── README.md
+src/
+├── assembly/                    # Phase 1: Finite-element assembly
+│   ├── laplacian_matrix.py      # 2D Laplacian (5-point stencil)
+│   ├── symmetric_matrix.py      # Random symmetric sparse matrices
+│   ├── asymmetric_matrix.py     # General asymmetric sparse matrices
+│   ├── run_benchmarks_assembly.sh
+│   └── results/                 # Assembly and conversion benchmarks
+│
+├── matrix_vector_mult/          # Phase 2: SpMV
+│   ├── spmv_python.py           # Serial SpMV implementations (COO, CSR, CSC, LIL)
+│   ├── spmv_openmp.cpp          # OpenMP SpMV (row-parallel CSR)
+│   ├── spmv_wrapper.py          # Python ctypes wrapper for C++ OpenMP
+│   ├── benchmark_spmv_serial.py # Serial format comparison
+│   ├── benchmark_spmv_openmp.py # OpenMP thread scaling (1-8 threads)
+│   ├── benchmark_suite_sparse.py # Real-world SuiteSparse matrices
+│   ├── matrices/                # Real sparse matrices (.mtx files)
+│   └── results/                 # SpMV benchmark results
+│
+├── matrix_matrix_mult/          # Phase 3a: SpMM (serial + OpenMP)
+│   ├── spmm_python.py           # Serial SpMM: row-wise, outer-product, blocked inner-product
+│   ├── spmm_openmp.cpp          # OpenMP SpMM (parallel variants)
+│   ├── spmm_openmp_wrapper.py   # Python ctypes wrapper
+│   ├── benchmark_spmm_serial.py # Serial algorithm comparison
+│   ├── benchmark_spmm_sparse_openmp.py # OpenMP scaling
+│   ├── build.py                 # Compiles C++ extensions
+│   └── results/                 # SpMM benchmark results
+│
+├── matrix_mult_mpi/             # Phase 3b: SpMM MPI
+│   ├── spmm_mpi.py              # MPI helper (row partitioning, distributed SpMM)
+│   ├── spmm_sparse_mpi.cpp      # Native C++ MPI implementation (~600 lines)
+│   ├── benchmark_spmm_sparse_mpi.py # MPI benchmark driver
+│   └── smoke_results_hpc/       # Smoke test results
+│
+├── load_matrices.py             # Matrix I/O utilities (skeleton)
+└── aggregate_results.py         # Results aggregation (skeleton)
+
+tests/
+├── test_assembly.py             # Assembly correctness tests
+├── test_spmm.py                 # SpMM algorithm tests (20+ cases)
+├── test_spmm_openmp.py          # OpenMP wrapper tests
+├── test_spmm_mpi_helpers.py     # MPI helper logic tests
+└── test_spmm_mpi_native.py      # Native C++ MPI smoke test
+
+scratch/                         # Sample notebooks and test matrices
 ```
 
 ---
@@ -107,75 +110,107 @@ utd-hpc-sparse-matrix-project/
 
 ### Prerequisites
 
-| Tool | Minimum Version | Purpose |
-|------|-----------------|---------|
-| GCC / Clang | 9+ | C/C++ compiler |
-| OpenMP | 4.5+ | Shared-memory parallelism |
-| MPI (OpenMPI / MPICH) | 3.x | Distributed-memory parallelism (optional) |
-| CUDA Toolkit | 11+ | GPU kernels (optional) |
-| Python 3 | 3.8+ | Plotting / analysis scripts |
-| make | — | Build system |
+- **Python 3.8+** — Main implementation language
+- **NumPy/SciPy** — Sparse matrix support, dense reference
+- **GCC/Clang 9+** — C/C++ compiler for OpenMP/MPI extensions
+- **OpenMP 4.5+** — Shared-memory parallelism (Part of GCC/Clang)
+- **MPI (OpenMPI 3.x or MPICH 3.x)** — Optional, for Phase 3b distributed-memory
+- **make** — Build system
 
-On a typical Linux HPC system (e.g., UTD Sysbio/Ganymede cluster):
-
+On a Linux HPC system:
 ```bash
-module load gcc openmpi cuda
+module load gcc openmpi
 ```
 
 ### Build
 
+**Build Phase 1, 2, 3a (Python + OpenMP):**
 ```bash
-# Clone the repository
-git clone https://github.com/desaiamogh31/utd-hpc-sparse-matrix-project.git
-cd utd-hpc-sparse-matrix-project
+cd src/matrix_vector_mult
+python build.py  # Compiles spmv_openmp.so
 
-# Build all targets (serial + OpenMP)
-make
+cd ../matrix_matrix_mult
+python build.py  # Compiles spmm_openmp.so
+```
 
-# Build with MPI support
-make MPI=1
-
-# Build with CUDA support
-make CUDA=1
-
-# Build tests
-make tests
+**Optional: Build Phase 3b native C++ MPI binary:**
+```bash
+cd src/matrix_mult_mpi
+mpicxx -O3 -fopenmp spmm_sparse_mpi.cpp -o spmm_sparse_mpi
 ```
 
 ### Run
 
+**Phase 1: Finite-element Assembly**
 ```bash
-# Run SpMV benchmark on a Matrix Market file with CSR format
-./bin/spmv --format csr --matrix data/sample.mtx
+cd src/assembly
+bash run_benchmarks_assembly.sh
+# Results saved to results/
+```
 
-# Run finite-element assembly benchmark
-./bin/assembly --elements 10000 --dof 3
+**Phase 2: SpMV Benchmarks**
+```bash
+cd src/matrix_vector_mult
 
-# Run the full benchmark suite and dump results to results/
-make bench
+# Serial baseline (all formats)
+python benchmark_spmv_serial.py
+
+# OpenMP scaling (1-8 threads)
+python benchmark_spmv_openmp.py
+
+# Real-world SuiteSparse matrices
+python benchmark_suite_sparse.py
+```
+
+**Phase 3a: SpMM Benchmarks**
+```bash
+cd src/matrix_matrix_mult
+
+# Serial algorithm comparison (row-wise, outer-product, blocked)
+python benchmark_spmm_serial.py
+
+# OpenMP thread scaling
+python benchmark_spmm_sparse_openmp.py
+```
+
+**Phase 3b: SpMM MPI (Python interface)**
+```bash
+cd src/matrix_mult_mpi
+
+# Requires MPI installation
+python benchmark_spmm_sparse_mpi.py
+```
+
+**Run Tests**
+```bash
+cd tests/
+
+# Assembly tests
+python test_assembly.py
+
+# SpMM tests
+python test_spmm.py
+python test_spmm_openmp.py
+
+# MPI helper tests (no MPI launch)
+python test_spmm_mpi_helpers.py
+
+# MPI native test (requires mpicxx)
+python test_spmm_mpi_native.py
 ```
 
 ---
 
-## Benchmarks
+## Benchmarking Notes
 
-Results are measured on the UTD HPC cluster nodes. Key metrics:
+All benchmark results are saved as CSV files with the following metrics:
+- **Wall-clock time** (milliseconds)
+- **GFlop/s** (effective floating-point operations per second)
+- **Memory bandwidth** (GB/s, where applicable)
 
-- **Wall-clock time** (ms)
-- **Effective GFlop/s**
-- **Memory bandwidth** (GB/s)
-
-Benchmark matrices are drawn from the [SuiteSparse Matrix Collection](https://sparse.tamu.edu/) (formerly University of Florida Sparse Matrix Collection).
-
----
-
-## Parallelization
-
-| Strategy | Scope | Notes |
-|----------|-------|-------|
-| OpenMP | Shared-memory (single node) | Loop-level parallelism in SpMV / assembly |
-| MPI | Distributed-memory (multi-node) | Row-wise matrix partitioning |
-| CUDA | GPU | ELL / CSR formats via custom CUDA kernels |
+Test matrices are drawn from:
+- **Synthetic**: Laplacian (2D FEM), random symmetric, random asymmetric
+- **Real-world**: SuiteSparse Matrix Collection (bus, bcsstk30, delaunay, abb313, pkustk14, etc.)
 
 ---
 
@@ -185,11 +220,10 @@ Benchmark matrices are drawn from the [SuiteSparse Matrix Collection](https://sp
 - T. A. Davis, *Direct Methods for Sparse Linear Systems*, SIAM, 2006.
 - [SuiteSparse Matrix Collection](https://sparse.tamu.edu/)
 - [Matrix Market file format](https://math.nist.gov/MatrixMarket/formats.html)
-- Bell & Garland, *Implementing Sparse Matrix-Vector Multiplication on Throughput-Oriented Processors*, SC '09.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).  
+Licensed under the [MIT License](LICENSE).  
 © 2026 Amogh Neelkanth Desai — University of Texas at Dallas
